@@ -1,0 +1,55 @@
+// src/topology/fabric.rs
+
+use petgraph::graph::{NodeIndex, UnGraph};
+use std::collections::HashMap;
+use crate::topology::{Router, RouterId, Link, LinkId, LinkConfig};
+use petgraph::graph::EdgeIndex;
+// duplicate NodeIndex import removed
+
+#[derive(Debug)]
+pub struct Fabric {
+    pub graph: UnGraph<Router, Link>,
+    pub router_index: HashMap<RouterId, NodeIndex>,
+    pub link_index: HashMap<LinkId, EdgeIndex>,
+}
+
+impl Fabric {
+    // existing methods...
+    /// Return a vector of references to all links incident to the given router.
+    pub fn incident_links(&self, router_id: &RouterId) -> Vec<Link> {
+        let mut result = Vec::new();
+        if let Some(&node_idx) = self.router_index.get(router_id) {
+            for edge_ref in self.graph.edges(node_idx) {
+                result.push(edge_ref.weight().clone());
+            }
+        }
+        result
+    }
+}
+
+impl Fabric {
+    pub fn new() -> Self {
+        Self {
+            graph: UnGraph::new_undirected(),
+            router_index: HashMap::new(),
+            link_index: HashMap::new(),
+        }
+    }
+
+    pub fn add_router(&mut self, router: Router) {
+        // Validate router id format
+        router.id.validate().expect("Invalid router id");
+        let idx = self.graph.add_node(router.clone());
+        self.router_index.insert(router.id.clone(), idx);
+    }
+
+    pub fn add_link(&mut self, a: &RouterId, b: &RouterId, cfg: LinkConfig) {
+        // Ensure both routers exist
+        let a_idx = self.router_index.get(a).expect("Router A missing");
+        let b_idx = self.router_index.get(b).expect("Router B missing");
+        let id = LinkId::new(a.clone(), b.clone());
+        let link = Link { id: id.clone(), cfg, counter: std::sync::atomic::AtomicU64::new(0) };
+        let edge_idx = self.graph.add_edge(*a_idx, *b_idx, link);
+        self.link_index.insert(id, edge_idx);
+    }
+}
