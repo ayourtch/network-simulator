@@ -37,7 +37,8 @@ pub async fn process_packet(
             }
             return;
         }
-        packet.ttl -= 1;
+        // Decrement TTL in packet and raw bytes
+        packet.decrement_ttl().expect("TTL decrement failed");
         // Get incident links
         let incident_links = fabric.incident_links(&current);
         // Select egress link
@@ -51,7 +52,7 @@ pub async fn process_packet(
         };
         debug!("Selected egress link {:?} from router {}", egress.id, current.0);
         // Simulate the link
-        if let Err(e) = simulation::simulate_link(egress, &[]).await {
+        if let Err(e) = simulation::simulate_link(egress, &packet.raw).await {
             error!("Link simulation error on router {}: {}", current.0, e);
             if e == "mtu_exceeded" {
                 let _ = icmp::generate_icmp_error(&packet, 3, 4); // Fragmentation Needed stub
@@ -115,7 +116,8 @@ pub async fn process_packet_multi(
             }
             return;
         }
-        packet.ttl -= 1;
+        // Decrement TTL in packet and raw bytes
+        packet.decrement_ttl().expect("TTL decrement failed");
         // Get incident links
         let incident_links = fabric.incident_links(&current);
         if incident_links.is_empty() {
@@ -123,7 +125,7 @@ pub async fn process_packet_multi(
             return;
         }
         // Select egress link using incident links
-        let egress = match forwarding::multipath::select_egress_link_multi(&current, &packet, incident_links.as_slice(), tables) {
+        let egress = match forwarding::multipath::select_egress_link_multi(&current, &packet, incident_links.as_slice(), tables, destination) {
             Some(l) => l,
             None => {
                 error!("Failed to select egress link for router {}", current.0);
@@ -132,7 +134,7 @@ pub async fn process_packet_multi(
         };
         debug!("Selected multipath egress link {:?} from router {}", egress.id, current.0);
         // Simulate the link
-        if let Err(e) = simulation::simulate_link(egress, &[]).await {
+        if let Err(e) = simulation::simulate_link(egress, &packet.raw).await {
             error!("Link simulation error on router {}: {}", current.0, e);
             if e == "mtu_exceeded" {
                 let _ = icmp::generate_icmp_error(&packet, 3, 4);

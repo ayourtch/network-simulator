@@ -8,11 +8,15 @@ pub struct RouterId(pub String);
 
 impl RouterId {
     pub fn validate(&self) -> Result<(), String> {
-        let re = regex::Regex::new(r"^Rx\d+y\d+$").unwrap();
+        // Enforce router IDs within 6x6 grid: Rx0y0 .. Rx5y5
+        let re = regex::Regex::new(r"^Rx[0-5]y[0-5]$").unwrap();
         if re.is_match(&self.0) {
             Ok(())
         } else {
-            Err(format!("Invalid router id '{}', expected RxXyY", self.0))
+            Err(format!(
+                "Invalid router id '{}', expected Rx[0-5]y[0-5]",
+                self.0
+            ))
         }
     }
 }

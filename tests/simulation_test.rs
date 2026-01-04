@@ -34,8 +34,9 @@ async fn test_link_simulation_and_load_balancing() {
         dst_port: 80,
         protocol: 6,
         ttl: 64,
-        //customer_id: 0,
+        raw: vec![],
     };
+
 
     // Select egress link from r1
     let links = fabric.incident_links(&r1.id);
@@ -43,7 +44,7 @@ async fn test_link_simulation_and_load_balancing() {
     assert!(selected.cfg.load_balance, "selected link should have load_balance enabled");
     let before = selected.counter();
     // Simulate link processing
-    simulate_link(selected, &[]).await.expect("simulation should succeed");
+    simulate_link(selected, &packet.raw).await.expect("simulation should succeed");
     let after = selected.counter();
     assert_eq!(after, before + 1, "counter should increment");
 }

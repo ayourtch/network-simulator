@@ -11,7 +11,41 @@ pub struct PacketMeta {
     pub dst_port: u16,
     pub protocol: u8, // TCP=6, UDP=17, ICMP=1, ICMPv6=58
     pub ttl: u8,
-    // removed unused virtual customer identifier
+    // Original raw bytes of the packet, preserved for write‑back.
+    pub raw: Vec<u8>,
+}
+
+impl PacketMeta {
+    /// Decrement the TTL (or Hop Limit) of the packet.
+    ///
+    /// This updates both the `ttl` field and the corresponding byte in the raw packet data.
+    /// Returns an error if the raw packet is malformed or the TTL is already zero.
+    pub fn decrement_ttl(&mut self) -> Result<(), &'static str> {
+        if self.ttl == 0 {
+            return Err("TTL already zero");
+        }
+        // Decrement the logical TTL value.
+        self.ttl = self.ttl.saturating_sub(1);
+        // Update the raw byte depending on IP version.
+        match self.src_ip {
+            IpAddr::V4(_) => {
+                // IPv4 TTL is at offset 8. If raw data is present and long enough, update it.
+                if self.raw.len() > 8 {
+                    let ttl_byte = self.raw[8];
+                    self.raw[8] = ttl_byte.saturating_sub(1);
+                }
+                // If raw is empty or too short, we simply skip raw update.
+            }
+            IpAddr::V6(_) => {
+                // IPv6 Hop Limit is at offset 7.
+                if self.raw.len() > 7 {
+                    let hl = self.raw[7];
+                    self.raw[7] = hl.saturating_sub(1);
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Stub parser – in the full version this would decode raw bytes using the `pnet` crate.
@@ -51,7 +85,7 @@ pub fn parse(data: &[u8]) -> Result<PacketMeta, &'static str> {
             dst_port,
             protocol,
             ttl,
-            //customer_id removed
+            raw: data.to_vec(),
         });
     } else if version == 6 {
         // IPv6 parsing
@@ -97,7 +131,7 @@ pub fn parse(data: &[u8]) -> Result<PacketMeta, &'static str> {
             dst_port,
             protocol: next_header,
             ttl: hop_limit,
-            //customer_id removed
+            raw: data.to_vec(),
         });
     } else {
         return Err("unsupported IP version");

@@ -28,6 +28,8 @@ impl SimulatorConfig {
     pub fn validate(&self) -> Result<(), String> {
         // Ensure link definitions are unique regardless of direction.
         let mut seen: HashSet<(String, String)> = HashSet::new();
+        // Collect existing router IDs for reference validation
+        let router_ids: HashSet<String> = self.topology.routers.keys().cloned().collect();
         for link_name in self.topology.links.keys() {
             let parts: Vec<&str> = link_name.split('_').collect();
             if parts.len() != 2 {
@@ -35,6 +37,13 @@ impl SimulatorConfig {
             }
             let a = parts[0].to_string();
             let b = parts[1].to_string();
+            // Validate that both routers exist
+            if !router_ids.contains(&a) {
+                return Err(format!("Link '{}' references unknown router '{}'", link_name, a));
+            }
+            if !router_ids.contains(&b) {
+                return Err(format!("Link '{}' references unknown router '{}'", link_name, b));
+            }
             // Normalize order for undirected comparison
             let key = if a < b { (a.clone(), b.clone()) } else { (b.clone(), a.clone()) };
             if seen.contains(&key) {
@@ -46,7 +55,6 @@ impl SimulatorConfig {
             seen.insert(key);
         }
         // Validate ingress routers exist in topology
-        let router_ids: HashSet<String> = self.topology.routers.keys().cloned().collect();
         if !router_ids.contains(&self.tun_ingress.tun_a_ingress) {
             return Err(format!("Ingress router '{}' not found in topology", self.tun_ingress.tun_a_ingress));
         }

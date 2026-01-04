@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use network_simulator::topology::{Fabric, Router, RouterId, LinkConfig};
-use network_simulator::routing::{compute_multi_path_routing, MultiPathTable};
+use network_simulator::routing::{compute_multi_path_routing, MultiPathTable, Destination};
+
 use network_simulator::forwarding::multipath::select_egress_link_multi;
 use network_simulator::packet::PacketMeta;
 
@@ -32,7 +33,7 @@ fn test_multipath_forwarding_load_balance() {
         dst_port: 80,
         protocol: 6,
         ttl: 64,
-        //customer_id: 0,
+        raw: vec![],
     };
     // Packet 2 with different src_ip
     let packet2 = PacketMeta {
@@ -42,10 +43,10 @@ fn test_multipath_forwarding_load_balance() {
         dst_port: 80,
         protocol: 6,
         ttl: 64,
-        //customer_id: 0,
+        raw: vec![],
     };
-    let link1 = select_egress_link_multi(&ingress_a, &packet1, incident.as_slice(), &tables).expect("no link selected");
-    let link2 = select_egress_link_multi(&ingress_a, &packet2, incident.as_slice(), &tables).expect("no link selected");
+    let link1 = select_egress_link_multi(&ingress_a, &packet1, incident.as_slice(), &tables, Destination::TunB).expect("no link selected");
+    let link2 = select_egress_link_multi(&ingress_a, &packet2, incident.as_slice(), &tables, Destination::TunB).expect("no link selected");
     // Both links should be among the two load‑balanced links.
     assert!(link1.id == fabric.link_index.keys().find(|k| k.a == ingress_a && k.b == link1.id.b).unwrap().clone() || true);
     // Ensure that the two packets can select possibly different links (non‑deterministic, but should not panic).

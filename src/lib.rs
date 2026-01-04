@@ -133,7 +133,7 @@ pub async fn run(cfg: SimulatorConfig) -> Result<(), Box<dyn std::error::Error>>
             dst_port: 80,
             protocol: 6, // TCP
             ttl: 64,
-            //customer_id: 0,
+            raw: vec![],
         };
         debug!("Processing dummy packet at router {}", first_router_id.0);
         // Determine destination based on which ingress the router is (simplified):
