@@ -67,6 +67,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(pf) = args.packet_file {
         cfg.packet_file = Some(pf);
     }
+    // Validate configuration
+    cfg.validate()?;
     if let Err(e) = network_simulator::run(cfg).await {
         eprintln!("Error: {}", e);
         process::exit(1);

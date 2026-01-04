@@ -14,7 +14,7 @@ pub async fn process_packet(
     tables: &HashMap<RouterId, RoutingTable>,
     ingress: RouterId,
     mut packet: PacketMeta,
-    _destination: Destination,
+    destination: Destination,
 ) {
     debug!("Starting packet processing at ingress {}", ingress.0);
     let mut current = ingress.clone();
@@ -41,7 +41,7 @@ pub async fn process_packet(
         // Get incident links
         let incident_links = fabric.incident_links(&current);
         // Select egress link
-        let egress = match forwarding::select_egress_link(&current, &packet, incident_links.as_slice(), tables) {
+        let egress = match forwarding::select_egress_link(&current, &packet, incident_links.as_slice(), tables, destination) {
 
             Some(l) => l,
             None => {
@@ -93,7 +93,7 @@ pub async fn process_packet_multi(
     tables: &HashMap<RouterId, MultiPathTable>,
     ingress: RouterId,
     mut packet: PacketMeta,
-    _destination: Destination,
+    destination: Destination,
 ) {
     debug!("Starting multipath packet processing at ingress {}", ingress.0);
     let mut current = ingress.clone();

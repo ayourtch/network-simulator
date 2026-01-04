@@ -3,7 +3,8 @@
 /// Configuration for the network simulator. Includes a flag to enable multipath routing.
 
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use crate::topology::router::RouterId;
 
 #[derive(Debug, Deserialize)]
 pub struct SimulatorConfig {
@@ -19,6 +20,44 @@ pub struct SimulatorConfig {
     pub enable_multipath: bool,
     #[serde(default)]
     pub packet_file: Option<String>, // Optional path to a file containing hex‑encoded mock packets for the TUN interface (overridden by CLI flag)
+}
+
+impl SimulatorConfig {
+    /// Validate configuration for logical consistency.
+    /// Currently checks for duplicate bidirectional links.
+    pub fn validate(&self) -> Result<(), String> {
+        // Ensure link definitions are unique regardless of direction.
+        let mut seen: HashSet<(String, String)> = HashSet::new();
+        for link_name in self.topology.links.keys() {
+            let parts: Vec<&str> = link_name.split('_').collect();
+            if parts.len() != 2 {
+                return Err(format!("Invalid link name '{}', expected 'A_B' format", link_name));
+            }
+            let a = parts[0].to_string();
+            let b = parts[1].to_string();
+            // Normalize order for undirected comparison
+            let key = if a < b { (a.clone(), b.clone()) } else { (b.clone(), a.clone()) };
+            if seen.contains(&key) {
+                return Err(format!(
+                    "Duplicate bidirectional link detected: '{}' and its opposite already defined",
+                    link_name
+                ));
+            }
+            seen.insert(key);
+        }
+        // Validate ingress routers exist in topology
+        let router_ids: HashSet<String> = self.topology.routers.keys().cloned().collect();
+        if !router_ids.contains(&self.tun_ingress.tun_a_ingress) {
+            return Err(format!("Ingress router '{}' not found in topology", self.tun_ingress.tun_a_ingress));
+        }
+        if !router_ids.contains(&self.tun_ingress.tun_b_ingress) {
+            return Err(format!("Ingress router '{}' not found in topology", self.tun_ingress.tun_b_ingress));
+        }
+        // Also ensure ingress IDs are valid format
+        RouterId(self.tun_ingress.tun_a_ingress.clone()).validate()?;
+        RouterId(self.tun_ingress.tun_b_ingress.clone()).validate()?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -51,7 +90,6 @@ pub struct RealTunConfig {
     #[serde(default = "default_real_tun_netmask")]
     pub netmask: String,
 }
-
 
 fn default_tun_a() -> String { "tunA".to_string() }
 fn default_tun_b() -> String { "tunB".to_string() }

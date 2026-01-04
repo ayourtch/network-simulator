@@ -1,7 +1,8 @@
 use network_simulator::topology::{Fabric, Router, RouterId, LinkConfig};
-use network_simulator::packet::PacketMeta;
+use network_simulator::routing::Destination;
 use network_simulator::forwarding::select_egress_link;
 use network_simulator::simulation::simulate_link;
+use network_simulator::packet::PacketMeta;
 use std::net::{IpAddr, Ipv4Addr};
 
 #[tokio::test]
@@ -38,7 +39,7 @@ async fn test_link_simulation_and_load_balancing() {
 
     // Select egress link from r1
     let links = fabric.incident_links(&r1.id);
-    let selected = select_egress_link(&r1.id, &packet, &links, &tables).expect("link selected");
+    let selected = select_egress_link(&r1.id, &packet, &links, &tables, Destination::TunB).expect("link selected");
     assert!(selected.cfg.load_balance, "selected link should have load_balance enabled");
     let before = selected.counter();
     // Simulate link processing

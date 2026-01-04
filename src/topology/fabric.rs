@@ -69,7 +69,11 @@ impl Fabric {
         // Ensure both routers exist
         let a_idx = self.router_index.get(a).expect("Router A missing");
         let b_idx = self.router_index.get(b).expect("Router B missing");
+        // Prevent duplicate links (bidirectional)
         let id = LinkId::new(a.clone(), b.clone());
+        if self.link_index.contains_key(&id) {
+            panic!("Link between {} and {} already exists", a.0, b.0);
+        }
         let link = Link { id: id.clone(), cfg, counter: std::sync::atomic::AtomicU64::new(0) };
         let edge_idx = self.graph.add_edge(*a_idx, *b_idx, link);
         self.link_index.insert(id, edge_idx);
