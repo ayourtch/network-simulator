@@ -1,5 +1,5 @@
 use crate::topology::{Fabric, RouterId};
-use crate::routing::{RoutingTable, MultiPathTable};
+use crate::routing::{RoutingTable, MultiPathTable, Destination};
 use crate::forwarding;
 use crate::simulation;
 use crate::packet::PacketMeta;
@@ -14,6 +14,7 @@ pub async fn process_packet(
     tables: &HashMap<RouterId, RoutingTable>,
     ingress: RouterId,
     mut packet: PacketMeta,
+    _destination: Destination,
 ) {
     debug!("Starting packet processing at ingress {}", ingress.0);
     let mut current = ingress.clone();
@@ -37,9 +38,11 @@ pub async fn process_packet(
             return;
         }
         packet.ttl -= 1;
-        // Select egress link (clone) using incident links
-        let incident = fabric.incident_links(&current);
-        let egress = match forwarding::select_egress_link(&current, &packet, incident.as_slice(), tables) {
+        // Get incident links
+        let incident_links = fabric.incident_links(&current);
+        // Select egress link
+        let egress = match forwarding::select_egress_link(&current, &packet, incident_links.as_slice(), tables) {
+
             Some(l) => l,
             None => {
                 error!("Failed to select egress link for router {}", current.0);
@@ -61,12 +64,12 @@ pub async fn process_packet(
             }
             return;
         }
+        // Keep incident_links alive until after simulation (no explicit drop needed)
+
         // Clone egress id before mutable borrow to avoid conflict
         let egress_id = egress.id.clone();
-        // Drop egress reference
-        drop(egress);
-        // Release incident borrow now that egress is no longer used
-        drop(incident);
+        // Drop egress reference (no-op for &Link)
+        let _ = egress;
         // Compute next router before mutable borrow
         let next_router = if egress_id.a == current { egress_id.b.clone() } else { egress_id.a.clone() };
         // Increment forwarded counter for successful link traversal
@@ -90,6 +93,7 @@ pub async fn process_packet_multi(
     tables: &HashMap<RouterId, MultiPathTable>,
     ingress: RouterId,
     mut packet: PacketMeta,
+    _destination: Destination,
 ) {
     debug!("Starting multipath packet processing at ingress {}", ingress.0);
     let mut current = ingress.clone();
@@ -112,13 +116,14 @@ pub async fn process_packet_multi(
             return;
         }
         packet.ttl -= 1;
-        if fabric.incident_links(&current).is_empty() {
+        // Get incident links
+        let incident_links = fabric.incident_links(&current);
+        if incident_links.is_empty() {
             error!("No links found for router {}", current.0);
             return;
         }
-        // Select egress link (clone) using incident links
-        let incident = fabric.incident_links(&current);
-        let egress = match forwarding::multipath::select_egress_link_multi(&current, &packet, incident.as_slice(), tables) {
+        // Select egress link using incident links
+        let egress = match forwarding::multipath::select_egress_link_multi(&current, &packet, incident_links.as_slice(), tables) {
             Some(l) => l,
             None => {
                 error!("Failed to select egress link for router {}", current.0);
@@ -126,6 +131,7 @@ pub async fn process_packet_multi(
             }
         };
         debug!("Selected multipath egress link {:?} from router {}", egress.id, current.0);
+        // Simulate the link
         if let Err(e) = simulation::simulate_link(egress, &[]).await {
             error!("Link simulation error on router {}: {}", current.0, e);
             if e == "mtu_exceeded" {
@@ -139,11 +145,11 @@ pub async fn process_packet_multi(
             }
             return;
         }
+        // Keep incident_links alive
+
         // Clone egress id before mutable borrow
         let egress_id = egress.id.clone();
-        drop(egress);
-        // Release incident borrow now that egress is no longer used
-        drop(incident);
+        let _ = egress;
         // Increment forwarded counter
         if let Some(node_idx) = fabric.router_index.get(&current) {
             if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {

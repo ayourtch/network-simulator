@@ -1,4 +1,4 @@
-# Issue 013: Link Counter Not Fully Integrated for Per-Packet Load Balancing
+
 
 ## Summary
 The `Link` struct has an atomic counter for per-packet load balancing, but it's only incremented in `simulate_link()` and not used in the path selection hash as specified in Plan 8.

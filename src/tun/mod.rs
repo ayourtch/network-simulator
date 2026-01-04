@@ -2,7 +2,7 @@
 
 use crate::config::SimulatorConfig;
 use crate::topology::Fabric;
-use crate::routing::{compute_routing, compute_multi_path_routing};
+use crate::routing::{compute_routing, compute_multi_path_routing, Destination};
 use crate::processor::{process_packet, process_packet_multi};
 use crate::topology::router::RouterId;
 use crate::packet::parse;
@@ -60,17 +60,17 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
                 }
             };
             // Choose ingress based on source IP (simplified heuristic).
-            let ingress = if packet.src_ip.to_string().starts_with("10.") {
-                ingress_a.clone()
+            let (ingress, destination) = if packet.src_ip.to_string().starts_with("10.") {
+                (ingress_a.clone(), Destination::TunB)
             } else {
-                ingress_b.clone()
+                (ingress_b.clone(), Destination::TunA)
             };
             debug!("Processing mock packet {} at ingress {}", idx + 1, ingress.0);
             if cfg.enable_multipath {
-                process_packet_multi(fabric, &multipath_tables, ingress, packet).await;
+                process_packet_multi(fabric, &multipath_tables, ingress, packet, destination).await;
             } else {
                 // Use normal packet processing which will forward and simulate link.
-                process_packet(fabric, &routing_tables, ingress, packet).await;
+                process_packet(fabric, &routing_tables, ingress, packet, destination).await;
             }
         }
     } else {
@@ -113,16 +113,16 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
                 }
             };
             // Choose ingress based on source IP heuristic (same as mock).
-            let ingress = if packet.src_ip.to_string().starts_with("10.") {
-                ingress_a.clone()
+            let (ingress, destination) = if packet.src_ip.to_string().starts_with("10.") {
+                (ingress_a.clone(), Destination::TunB)
             } else {
-                ingress_b.clone()
+                (ingress_b.clone(), Destination::TunA)
             };
             debug!("Processing packet from TUN on ingress {}", ingress.0);
             if cfg.enable_multipath {
-                process_packet_multi(fabric, &multipath_tables, ingress, packet).await;
+                process_packet_multi(fabric, &multipath_tables, ingress, packet, destination).await;
             } else {
-                process_packet(fabric, &routing_tables, ingress, packet).await;
+                process_packet(fabric, &routing_tables, ingress, packet, destination).await;
             }
         }
     }

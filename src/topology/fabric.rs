@@ -3,7 +3,7 @@
 use petgraph::graph::{NodeIndex, UnGraph};
 use tracing::info;
 use std::collections::HashMap;
-use crate::topology::{Router, RouterId, Link, LinkId, LinkConfig};
+use crate::topology::{Router, RouterId, Link, LinkId, LinkConfig, RouterStats};
 use petgraph::graph::EdgeIndex;
 // duplicate NodeIndex import removed
 
@@ -35,6 +35,17 @@ impl Fabric {
                 info!("Router {}: recv={}, fwd={}, icmp={}", router_id.0, stats.packets_received, stats.packets_forwarded, stats.icmp_generated);
             }
         }
+    }
+
+    /// Return a map of router IDs to their statistics.
+    pub fn get_statistics(&self) -> std::collections::HashMap<RouterId, RouterStats> {
+        let mut map = std::collections::HashMap::new();
+        for (router_id, node_idx) in &self.router_index {
+            if let Some(router) = self.graph.node_weight(*node_idx) {
+                map.insert(router_id.clone(), router.stats.clone());
+            }
+        }
+        map
     }
 }
 

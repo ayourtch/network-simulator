@@ -136,11 +136,13 @@ pub async fn run(cfg: SimulatorConfig) -> Result<(), Box<dyn std::error::Error>>
             //customer_id: 0,
         };
         debug!("Processing dummy packet at router {}", first_router_id.0);
+        // Determine destination based on which ingress the router is (simplified):
+        let destination = if first_router_id == ingress_a { Destination::TunB } else { Destination::TunA };
         // Use single-path forwarding for now
-        process_packet(&mut fabric, &tables, first_router_id.clone(), dummy_packet.clone()).await;
+        process_packet(&mut fabric, &tables, first_router_id.clone(), dummy_packet.clone(), destination).await;
         // Also demonstrate multipath forwarding
         if cfg.enable_multipath {
-            process_packet_multi(&mut fabric, &multi_tables, first_router_id.clone(), dummy_packet).await;
+            process_packet_multi(&mut fabric, &multi_tables, first_router_id.clone(), dummy_packet, destination).await;
         }
     }
 
@@ -148,6 +150,8 @@ pub async fn run(cfg: SimulatorConfig) -> Result<(), Box<dyn std::error::Error>>
     if let Err(e) = tun::start(&cfg, &mut fabric).await {
         error!("Failed to start TUN handling: {}", e);
     }
+    // Print final statistics
+    fabric.print_statistics();
 
     Ok(())
 }
