@@ -52,6 +52,18 @@ impl Fabric {
         }
         map
     }
+
+    /// Retrieve a reference to a router by its ID, if it exists.
+    pub fn get_router(&self, router_id: &RouterId) -> Option<&Router> {
+        self.router_index.get(router_id).and_then(|&node_idx| self.graph.node_weight(node_idx))
+    }
+
+    /// Retrieve a mutable reference to a router by its ID, if it exists.
+    pub fn get_router_mut(&mut self, router_id: &RouterId) -> Option<&mut Router> {
+        // First retrieve the node index, then get a mutable reference to the router.
+        let node_idx = *self.router_index.get(router_id)?;
+        self.graph.node_weight_mut(node_idx)
+    }
 }
 
 impl Fabric {
