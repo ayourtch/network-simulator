@@ -1,4 +1,4 @@
-use network_simulator::topology::{Fabric, Router, RouterId};
+use network_simulator::topology::{Fabric, RouterId};
 
 #[test]
 fn test_fabric_incident_links_missing_router() {
