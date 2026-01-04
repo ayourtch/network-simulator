@@ -21,6 +21,16 @@ struct Args {
     /// Enable multipath routing
     #[arg(long, action = clap::ArgAction::SetTrue, help = "Enable multipath routing")]
     multipath: bool,
+
+    /// Optional real TUN device name (overrides config)
+    #[arg(long)]
+    tun_name: Option<String>,
+    /// Optional real TUN device IPv4 address (overrides config)
+    #[arg(long)]
+    tun_address: Option<String>,
+    /// Optional real TUN device netmask (overrides config)
+    #[arg(long)]
+    tun_netmask: Option<String>,
 }
 
 #[tokio::main]
@@ -40,6 +50,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cfg_str = fs::read_to_string(&args.config)?;
     let mut cfg: SimulatorConfig = toml::from_str(&cfg_str)?;
     cfg.enable_multipath = args.multipath;
+    // Override real TUN config if CLI options provided
+    if let Some(name) = args.tun_name {
+        cfg.interfaces.real_tun.name = name;
+    }
+    if let Some(addr) = args.tun_address {
+        cfg.interfaces.real_tun.address = addr;
+    }
+    if let Some(mask) = args.tun_netmask {
+        cfg.interfaces.real_tun.netmask = mask;
+    }
     if let Err(e) = network_simulator::run(cfg).await {
         eprintln!("Error: {}", e);
         process::exit(1);

@@ -117,6 +117,12 @@ seed = 42
 tun_a = "tunA"
 tun_b = "tunB"
 
+# Real TUN device configuration (optional)
+[interfaces.real_tun]
+name = "tun0"
+address = "10.0.0.1"
+netmask = "255.255.255.0"
+
 [tun_ingress]
 tun_a_ingress = "Rx0y0"
 tun_b_ingress = "Rx5y5"
@@ -132,6 +138,8 @@ enable_multipath = true
 Same as described in the **Usage** section.
 
 ## Examples
+
+See the `examples/README.md` for a quick start guide and sample configuration files.
 
 ```bash
 ./target/release/network-simulator --config config.toml -vv --multipath

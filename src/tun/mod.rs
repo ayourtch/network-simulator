@@ -10,7 +10,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use tokio::io::AsyncReadExt;
 use tun::platform::Device as TunDevice;
-use tun::{Configuration, Device};
+use tun::{Configuration};
 use std::os::unix::io::{AsRawFd, FromRawFd};
 use tracing::{info, error, debug};
 use std::net::Ipv4Addr;
