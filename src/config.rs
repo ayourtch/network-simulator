@@ -38,10 +38,28 @@ pub struct InterfacesConfig {
     pub tun_a: String,
     #[serde(default = "default_tun_b")]
     pub tun_b: String,
+    #[serde(default = "default_real_tun")]
+    pub real_tun: RealTunConfig,
 }
+
+#[derive(Debug, Deserialize, Default)]
+pub struct RealTunConfig {
+    #[serde(default = "default_real_tun_name")]
+    pub name: String,
+    #[serde(default = "default_real_tun_addr")]
+    pub address: String,
+    #[serde(default = "default_real_tun_netmask")]
+    pub netmask: String,
+}
+
 
 fn default_tun_a() -> String { "tunA".to_string() }
 fn default_tun_b() -> String { "tunB".to_string() }
+
+fn default_real_tun_name() -> String { "tun0".to_string() }
+fn default_real_tun_addr() -> String { "10.0.0.1".to_string() }
+fn default_real_tun_netmask() -> String { "255.255.255.0".to_string() }
+fn default_real_tun() -> RealTunConfig { RealTunConfig::default() }
 
 #[derive(Debug, Deserialize, Default)]
 pub struct TunIngressConfig {

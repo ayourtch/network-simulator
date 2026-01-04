@@ -13,6 +13,7 @@ use tun::platform::Device as TunDevice;
 use tun::{Configuration, Device};
 use std::os::unix::io::{AsRawFd, FromRawFd};
 use tracing::{info, error, debug};
+use std::net::Ipv4Addr;
 // use crate::simulation; // unused currently
 
 /// Mock TUN handling.
@@ -73,13 +74,16 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
         }
     } else {
         // Open a TUN device using the first configured interface name.
-        let tun_name = &cfg.interfaces.tun_a;
+        let tun_name = &cfg.interfaces.real_tun.name;
         info!("Opening real TUN device {}", tun_name);
         let mut config = Configuration::default();
+        // Parse address and netmask, fallback to defaults on parse error
+        let addr: Ipv4Addr = cfg.interfaces.real_tun.address.parse().unwrap_or(Ipv4Addr::new(10,0,0,1));
+        let netmask: Ipv4Addr = cfg.interfaces.real_tun.netmask.parse().unwrap_or(Ipv4Addr::new(255,255,255,0));
         config
             .name(tun_name)
-            .address((10, 0, 0, 1))
-            .netmask((255, 255, 255, 0))
+            .address(addr)
+            .netmask(netmask)
             .up();
         let dev = TunDevice::new(&config)
             .map_err(|e| format!("Failed to create TUN device: {}", e))?;
