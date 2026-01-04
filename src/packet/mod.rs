@@ -2,6 +2,49 @@
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+/// Calculate IPv4 header checksum (RFC 791).
+pub fn calculate_ipv4_checksum(header: &[u8]) -> u16 {
+    if header.len() < 20 {
+        return 0;
+    }
+    // Header length in bytes = IHL * 4
+    let ihl = (header[0] & 0x0F) as usize * 4;
+    let header = &header[..ihl.min(header.len())];
+    let mut sum: u32 = 0;
+    for i in (0..header.len()).step_by(2) {
+        // Skip checksum field at bytes 10-11
+        if i == 10 {
+            continue;
+        }
+        let word = if i + 1 < header.len() {
+            u16::from_be_bytes([header[i], header[i + 1]])
+        } else {
+            // Odd number of bytes, pad with zero
+            u16::from_be_bytes([header[i], 0])
+        };
+        sum += word as u32;
+    }
+    // Add carries
+    while (sum >> 16) != 0 {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+    !(sum as u16)
+}
+
+/// Update the IPv4 header checksum in-place after modifications.
+pub fn update_ipv4_checksum(packet: &mut [u8]) {
+    if packet.len() < 20 {
+        return;
+    }
+    // Zero out checksum field
+    packet[10] = 0;
+    packet[11] = 0;
+    let checksum = calculate_ipv4_checksum(packet);
+    packet[10] = (checksum >> 8) as u8;
+    packet[11] = (checksum & 0xFF) as u8;
+}
+
+
 /// Minimal packet metadata used by the simulator.
 #[derive(Debug, Clone)]
 pub struct PacketMeta {
@@ -33,8 +76,9 @@ impl PacketMeta {
                 if self.raw.len() > 8 {
                     let ttl_byte = self.raw[8];
                     self.raw[8] = ttl_byte.saturating_sub(1);
+                    // Recalculate IPv4 header checksum after TTL change.
+                    update_ipv4_checksum(&mut self.raw);
                 }
-                // If raw is empty or too short, we simply skip raw update.
             }
             IpAddr::V6(_) => {
                 // IPv6 Hop Limit is at offset 7.

@@ -20,4 +20,4 @@ Rx0y0 = {}
 Rx5y5 = {}
 
 [topology.links]
-Rx0y0_Rx5y5 = { delay_ms = 10, jitter_ms = 0, loss_percent = 0, mtu = 1500, bandwidth_mbps = 100 }
+Rx0y0_Rx5y5 = { delay_ms = 10, jitter_ms = 0, loss_percent = 0, mtu = 1500 }

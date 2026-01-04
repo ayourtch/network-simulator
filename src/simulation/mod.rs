@@ -39,13 +39,17 @@ pub async fn simulate_link(link: &Link, packet: &[u8]) -> Result<(), &'static st
         return Err("packet lost");
     }
 
-    // Compute total delay = base delay + jitter (random 0..=jitter).
+    // Compute jitter as symmetric offset and total delay = base delay + jitter (can be negative).
     let jitter = if link.cfg.jitter_ms > 0 {
-        rng.gen_range(0..=link.cfg.jitter_ms)
+        // Generate jitter in the range [-jitter_ms, +jitter_ms]
+        let range = -(link.cfg.jitter_ms as i32)..=link.cfg.jitter_ms as i32;
+        rng.gen_range(range) as i32
     } else {
         0
     };
-    let total_delay = link.cfg.delay_ms + jitter;
+    // Ensure total delay is non‑negative
+    let total_delay_i32 = link.cfg.delay_ms as i32 + jitter;
+    let total_delay = if total_delay_i32 < 0 { 0 } else { total_delay_i32 as u32 };
     if total_delay > 0 {
         debug!("Delaying packet on link {:?} by {} ms (jitter {} ms)", link.id, link.cfg.delay_ms, jitter);
         sleep(Duration::from_millis(total_delay as u64)).await;

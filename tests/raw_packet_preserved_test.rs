@@ -1,4 +1,4 @@
-use network_simulator::packet::{parse, PacketMeta};
+use network_simulator::packet::{parse, PacketMeta, calculate_ipv4_checksum};
 
 #[test]
 fn test_raw_packet_ttl_decrement_preserves_raw() {
@@ -19,11 +19,19 @@ fn test_raw_packet_ttl_decrement_preserves_raw() {
     pkt.decrement_ttl().expect("decrement failed");
     assert_eq!(pkt.ttl, 63);
     assert_eq!(pkt.raw[8], 63);
-    // Ensure other bytes unchanged
+    // Verify checksum was updated correctly
+    let expected_checksum = calculate_ipv4_checksum(&pkt.raw);
+    let actual_checksum = ((pkt.raw[10] as u16) << 8) | (pkt.raw[11] as u16);
+    assert_eq!(actual_checksum, expected_checksum);
+    // Ensure other bytes unchanged (except checksum bytes 10-11)
     for i in 0..8 {
         assert_eq!(pkt.raw[i], raw[i]);
     }
-    for i in 9..raw.len() {
+    for i in 9..10 {
+        // byte 9 (protocol) should stay the same
+        assert_eq!(pkt.raw[i], raw[i]);
+    }
+    for i in 12..raw.len() {
         assert_eq!(pkt.raw[i], raw[i]);
     }
 }
