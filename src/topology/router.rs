@@ -24,6 +24,18 @@ pub struct Router {
     pub stats: RouterStats,
 }
 
+impl Router {
+    pub fn increment_received(&mut self) {
+        self.stats.packets_received += 1;
+    }
+    pub fn increment_forwarded(&mut self) {
+        self.stats.packets_forwarded += 1;
+    }
+    pub fn increment_icmp(&mut self) {
+        self.stats.icmp_generated += 1;
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct RouterStats {
     pub packets_received: u64,

@@ -137,10 +137,10 @@ pub async fn run(cfg: SimulatorConfig) -> Result<(), Box<dyn std::error::Error>>
         };
         debug!("Processing dummy packet at router {}", first_router_id.0);
         // Use single-path forwarding for now
-        process_packet(&fabric, &tables, first_router_id.clone(), dummy_packet.clone()).await;
+        process_packet(&mut fabric, &tables, first_router_id.clone(), dummy_packet.clone()).await;
         // Also demonstrate multipath forwarding
         if cfg.enable_multipath {
-            process_packet_multi(&fabric, &multi_tables, first_router_id.clone(), dummy_packet).await;
+            process_packet_multi(&mut fabric, &multi_tables, first_router_id.clone(), dummy_packet).await;
         }
     }
 

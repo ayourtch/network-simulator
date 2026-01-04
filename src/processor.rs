@@ -5,12 +5,12 @@ use crate::simulation;
 use crate::packet::PacketMeta;
 use crate::icmp;
 use std::collections::HashMap;
-use tracing::{info, debug, error};
+use tracing::{debug, error};
 
 /// Process a packet using the standard routing table.
 /// Implements hop‑by‑hop forwarding until TTL expires or no further hop is found.
 pub async fn process_packet(
-    fabric: &Fabric,
+    fabric: &mut Fabric,
     tables: &HashMap<RouterId, RoutingTable>,
     ingress: RouterId,
     mut packet: PacketMeta,
@@ -18,22 +18,28 @@ pub async fn process_packet(
     debug!("Starting packet processing at ingress {}", ingress.0);
     let mut current = ingress.clone();
     loop {
+        // Increment received counter at current router
+        if let Some(node_idx) = fabric.router_index.get(&current) {
+            if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
+                router.increment_received();
+            }
+        }
         // Decrement TTL / Hop Limit
         if packet.ttl <= 1 {
             debug!("TTL expired at router {}. Dropping packet.", current.0);
             let _ = icmp::generate_icmp_error(&packet, 11, 0); // Time Exceeded stub
+            // Increment ICMP counter
+            if let Some(node_idx) = fabric.router_index.get(&current) {
+                if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
+                    router.increment_icmp();
+                }
+            }
             return;
         }
         packet.ttl -= 1;
-        // Find incident links for the current router
+        // Select egress link (clone) using incident links
         let incident = fabric.incident_links(&current);
-        if incident.is_empty() {
-            error!("No links found for router {}", current.0);
-            return;
-        }
-        // Select egress link
-        let egress = forwarding::select_egress_link(&current, &packet, incident.as_slice(), tables);
-        let egress = match egress {
+        let egress = match forwarding::select_egress_link(&current, &packet, incident.as_slice(), tables) {
             Some(l) => l,
             None => {
                 error!("Failed to select egress link for router {}", current.0);
@@ -46,11 +52,29 @@ pub async fn process_packet(
             error!("Link simulation error on router {}: {}", current.0, e);
             if e == "mtu_exceeded" {
                 let _ = icmp::generate_icmp_error(&packet, 3, 4); // Fragmentation Needed stub
+                // Increment ICMP counter
+                if let Some(node_idx) = fabric.router_index.get(&current) {
+                    if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
+                        router.increment_icmp();
+                    }
+                }
             }
             return;
         }
-        // Move to the next router across the link
-        let next_router = if egress.id.a == current { egress.id.b.clone() } else { egress.id.a.clone() };
+        // Clone egress id before mutable borrow to avoid conflict
+        let egress_id = egress.id.clone();
+        // Drop egress reference
+        drop(egress);
+        // Release incident borrow now that egress is no longer used
+        drop(incident);
+        // Compute next router before mutable borrow
+        let next_router = if egress_id.a == current { egress_id.b.clone() } else { egress_id.a.clone() };
+        // Increment forwarded counter for successful link traversal
+        if let Some(node_idx) = fabric.router_index.get(&current) {
+            if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
+                router.increment_forwarded();
+            }
+        }
         if next_router == current {
             debug!("Reached router {} with no further hop, stopping.", current.0);
             return;
@@ -62,7 +86,7 @@ pub async fn process_packet(
 /// Process a packet using multipath routing tables.
 /// Mirrors the logic of `process_packet` but uses multipath routing.
 pub async fn process_packet_multi(
-    fabric: &Fabric,
+    fabric: &mut Fabric,
     tables: &HashMap<RouterId, MultiPathTable>,
     ingress: RouterId,
     mut packet: PacketMeta,
@@ -70,19 +94,31 @@ pub async fn process_packet_multi(
     debug!("Starting multipath packet processing at ingress {}", ingress.0);
     let mut current = ingress.clone();
     loop {
+        // Increment received counter
+        if let Some(node_idx) = fabric.router_index.get(&current) {
+            if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
+                router.increment_received();
+            }
+        }
         if packet.ttl <= 1 {
             debug!("TTL expired at router {}. Dropping packet.", current.0);
             let _ = icmp::generate_icmp_error(&packet, 11, 0);
+            // Increment ICMP counter
+            if let Some(node_idx) = fabric.router_index.get(&current) {
+                if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
+                    router.increment_icmp();
+                }
+            }
             return;
         }
         packet.ttl -= 1;
-        let incident = fabric.incident_links(&current);
-        if incident.is_empty() {
+        if fabric.incident_links(&current).is_empty() {
             error!("No links found for router {}", current.0);
             return;
         }
-        let egress = forwarding::multipath::select_egress_link_multi(&current, &packet, incident.as_slice(), tables);
-        let egress = match egress {
+        // Select egress link (clone) using incident links
+        let incident = fabric.incident_links(&current);
+        let egress = match forwarding::multipath::select_egress_link_multi(&current, &packet, incident.as_slice(), tables) {
             Some(l) => l,
             None => {
                 error!("Failed to select egress link for router {}", current.0);
@@ -94,10 +130,27 @@ pub async fn process_packet_multi(
             error!("Link simulation error on router {}: {}", current.0, e);
             if e == "mtu_exceeded" {
                 let _ = icmp::generate_icmp_error(&packet, 3, 4);
+                // Increment ICMP counter
+                if let Some(node_idx) = fabric.router_index.get(&current) {
+                    if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
+                        router.increment_icmp();
+                    }
+                }
             }
             return;
         }
-        let next_router = if egress.id.a == current { egress.id.b.clone() } else { egress.id.a.clone() };
+        // Clone egress id before mutable borrow
+        let egress_id = egress.id.clone();
+        drop(egress);
+        // Release incident borrow now that egress is no longer used
+        drop(incident);
+        // Increment forwarded counter
+        if let Some(node_idx) = fabric.router_index.get(&current) {
+            if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
+                router.increment_forwarded();
+            }
+        }
+        let next_router = if egress_id.a == current { egress_id.b.clone() } else { egress_id.a.clone() };
         if next_router == current {
             debug!("Reached router {} with no further hop, stopping.", current.0);
             return;

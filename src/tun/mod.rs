@@ -67,10 +67,10 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
             };
             debug!("Processing mock packet {} at ingress {}", idx + 1, ingress.0);
             if cfg.enable_multipath {
-                process_packet_multi(&fabric, &multipath_tables, ingress, packet).await;
+                process_packet_multi(fabric, &multipath_tables, ingress, packet).await;
             } else {
                 // Use normal packet processing which will forward and simulate link.
-                process_packet(&fabric, &routing_tables, ingress, packet).await;
+                process_packet(fabric, &routing_tables, ingress, packet).await;
             }
         }
     } else {
@@ -120,9 +120,9 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
             };
             debug!("Processing packet from TUN on ingress {}", ingress.0);
             if cfg.enable_multipath {
-                process_packet_multi(&fabric, &multipath_tables, ingress, packet).await;
+                process_packet_multi(fabric, &multipath_tables, ingress, packet).await;
             } else {
-                process_packet(&fabric, &routing_tables, ingress, packet).await;
+                process_packet(fabric, &routing_tables, ingress, packet).await;
             }
         }
     }

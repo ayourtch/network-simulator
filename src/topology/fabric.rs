@@ -1,6 +1,7 @@
 // src/topology/fabric.rs
 
 use petgraph::graph::{NodeIndex, UnGraph};
+use tracing::info;
 use std::collections::HashMap;
 use crate::topology::{Router, RouterId, Link, LinkId, LinkConfig};
 use petgraph::graph::EdgeIndex;
@@ -24,6 +25,16 @@ impl Fabric {
             }
         }
         result
+    }
+
+    /// Print statistics for all routers.
+    pub fn print_statistics(&self) {
+        for (router_id, node_idx) in &self.router_index {
+            if let Some(router) = self.graph.node_weight(*node_idx) {
+                let stats = &router.stats;
+                info!("Router {}: recv={}, fwd={}, icmp={}", router_id.0, stats.packets_received, stats.packets_forwarded, stats.icmp_generated);
+            }
+        }
     }
 }
 
