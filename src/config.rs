@@ -32,10 +32,68 @@ pub struct SimulatorConfig {
 
 impl SimulatorConfig {
     pub fn validate(&self) -> Result<(), String> {
+        // First, validate packet injection configuration consistency before other checks,
+        // so that errors about mutually exclusive fields or missing files are reported early.
+        // Ensure mutually exclusive use of single and multiple packet files.
+        if self.packet_file.is_some() && self.packet_files.is_some() {
+            return Err("Both 'packet_file' and 'packet_files' are set; only one may be specified".to_string());
+        }
+        // Ensure injection direction specified only when corresponding packet file(s) are set.
+        if self.packet_inject_tun.is_some() && self.packet_file.is_none() {
+            return Err("'packet_inject_tun' specified without a 'packet_file'".to_string());
+        }
+        if self.packet_inject_tuns.is_some() && self.packet_files.is_none() {
+            return Err("'packet_inject_tuns' specified without 'packet_files'".to_string());
+        }
+        // Validate injection direction values.
+        if let Some(ref dir) = self.packet_inject_tun {
+            if dir != "tun_a" && dir != "tun_b" {
+                return Err(format!("Invalid packet_inject_tun value '{}', expected 'tun_a' or 'tun_b'", dir));
+            }
+        }
+        if let Some(ref dirs) = self.packet_inject_tuns {
+            for d in dirs {
+                if d != "tun_a" && d != "tun_b" {
+                    return Err(format!("Invalid packet_inject_tuns value '{}', expected 'tun_a' or 'tun_b'", d));
+                }
+            }
+        }
+        // Validate packet injection configuration consistency (matching lengths).
+        if let (Some(files), Some(injects)) = (&self.packet_files, &self.packet_inject_tuns) {
+            if files.len() != injects.len() {
+                return Err(format!(
+                    "Number of packet files ({}) does not match number of injection directions ({})",
+                    files.len(),
+                    injects.len()
+                ));
+            }
+            // Ensure packet_files is not empty when provided
+            if files.is_empty() {
+                return Err("packet_files list cannot be empty".to_string());
+            }
+        }
+        // Validate existence of packet file(s) if provided.
+        use std::path::Path;
+        if let Some(ref path) = self.packet_file {
+            if !Path::new(path).exists() {
+                return Err(format!("packet_file '{}' does not exist", path));
+            }
+        }
+        if let Some(ref files) = self.packet_files {
+            for p in files {
+                if !Path::new(p).exists() {
+                    return Err(format!("packet file '{}' does not exist", p));
+                }
+            }
+        }
         // Ensure link definitions are unique regardless of direction.
         let mut seen: HashSet<(String, String)> = HashSet::new();
         // Collect existing router IDs for reference validation
         let router_ids: HashSet<String> = self.topology.routers.keys().cloned().collect();
+        // Ensure at least one router is defined in the topology
+        if router_ids.is_empty() {
+            return Err("Topology must define at least one router".to_string());
+        }
         for link_name in self.topology.links.keys() {
             let parts: Vec<&str> = link_name.split('_').collect();
             if parts.len() != 2 {
@@ -70,27 +128,6 @@ impl SimulatorConfig {
         // Also ensure ingress IDs are valid format
         RouterId(self.tun_ingress.tun_a_ingress.clone()).validate()?;
         RouterId(self.tun_ingress.tun_b_ingress.clone()).validate()?;
-        // Validate packet injection configuration consistency
-        if let (Some(files), Some(injects)) = (&self.packet_files, &self.packet_inject_tuns) {
-            if files.len() != injects.len() {
-                return Err(format!(
-                    "Number of packet files ({}) does not match number of injection directions ({})",
-                    files.len(),
-                    injects.len()
-                ));
-            }
-        }
-        // Ensure mutually exclusive use of single and multiple packet files
-        if self.packet_file.is_some() && self.packet_files.is_some() {
-            return Err("Both 'packet_file' and 'packet_files' are set; only one may be specified".to_string());
-        }
-        // Ensure injection direction specified only when corresponding packet file(s) are set
-        if self.packet_inject_tun.is_some() && self.packet_file.is_none() {
-            return Err("'packet_inject_tun' specified without a 'packet_file'".to_string());
-        }
-        if self.packet_inject_tuns.is_some() && self.packet_files.is_none() {
-            return Err("'packet_inject_tuns' specified without 'packet_files'".to_string());
-        }
         Ok(())
     }
 }
