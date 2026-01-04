@@ -7,10 +7,19 @@ use tokio::time::{sleep, Duration};
 
 /// Apply link characteristics (delay, jitter, loss) to a packet.
 /// Returns `Ok(())` if the packet survives the link, or `Err` if it is dropped due to loss.
-pub async fn simulate_link(link: &Link, _packet: &[u8]) -> Result<(), &'static str> {
+pub async fn simulate_link(link: &Link, packet: &[u8]) -> Result<(), &'static str> {
     // Increment packet counter for load‑balancing statistics
     use std::sync::atomic::Ordering;
     link.counter.fetch_add(1, Ordering::Relaxed);
+
+    // MTU enforcement
+    if let Some(mtu) = link.cfg.mtu {
+        if packet.len() > mtu as usize {
+            debug!("Packet size {} exceeds MTU {} on link {:?}", packet.len(), mtu, link.id);
+            return Err("mtu_exceeded");
+        }
+    }
+
     // Simulate packet loss based on configured loss_percent (0.0 – 100.0).
     let mut rng = rand::thread_rng();
     if rng.gen_range(0.0..100.0) < link.cfg.loss_percent as f64 {

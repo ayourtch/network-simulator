@@ -3,6 +3,7 @@ use crate::routing::{RoutingTable, MultiPathTable};
 use crate::forwarding;
 use crate::simulation;
 use crate::packet::PacketMeta;
+use crate::icmp;
 use std::collections::HashMap;
 use tracing::{info, debug, error};
 
@@ -30,11 +31,20 @@ pub async fn process_packet(
     match egress {
         Some(link) => {
             debug!("Selected egress link {:?}", link.id);
-            if let Err(e) = simulation::simulate_link(link, &[]).await {
-                error!("Link simulation error: {}", e);
-                return;
+            // Simulate link and handle possible errors (loss or MTU)
+            match simulation::simulate_link(link, &[]).await {
+                Ok(_) => {
+                    info!("Packet forwarded from {} via link {:?}", ingress.0, link.id);
+                },
+                Err(e) => {
+                    error!("Link simulation error: {}", e);
+                    if e == "mtu_exceeded" {
+                        // Generate ICMP Fragmentation Needed error (stub)
+                        let _icmp = icmp::generate_icmp_error(&packet, 3, 4); // Type 3 Code 4
+                    }
+                    return;
+                }
             }
-            info!("Packet forwarded from {} via link {:?}", ingress.0, link.id);
         }
         None => {
             error!("Failed to select egress link for router {}", ingress.0);
@@ -65,11 +75,19 @@ pub async fn process_packet_multi(
     match egress {
         Some(link) => {
             debug!("Selected egress link {:?}", link.id);
-            if let Err(e) = simulation::simulate_link(link, &[]).await {
-                error!("Link simulation error: {}", e);
-                return;
+            // Simulate link and handle possible errors (loss or MTU)
+            match simulation::simulate_link(link, &[]).await {
+                Ok(_) => {
+                    info!("Packet forwarded (multipath) from {} via link {:?}", ingress.0, link.id);
+                },
+                Err(e) => {
+                    error!("Link simulation error: {}", e);
+                    if e == "mtu_exceeded" {
+                        let _icmp = icmp::generate_icmp_error(&packet, 3, 4);
+                    }
+                    return;
+                }
             }
-            info!("Packet forwarded (multipath) from {} via link {:?}", ingress.0, link.id);
         }
         None => {
             error!("Failed to select egress link for router {}", ingress.0);
