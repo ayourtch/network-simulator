@@ -8,7 +8,9 @@ use crate::topology::router::RouterId;
 use crate::packet::parse;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use tokio::select;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
 use tun::platform::Device as TunDevice;
 use tun::{Configuration};
 use std::os::unix::io::{AsRawFd, FromRawFd};
@@ -67,11 +69,11 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
             };
             debug!("Processing mock packet {} at ingress {}", idx + 1, ingress.0);
             if cfg.enable_multipath {
-                process_packet_multi(fabric, &multipath_tables, ingress, packet, destination).await;
+                let _ = process_packet_multi(fabric, &multipath_tables, ingress, packet, destination).await;
             } else {
-                // Use normal packet processing which will forward and simulate link.
-                process_packet(fabric, &routing_tables, ingress, packet, destination).await;
+                let _ = process_packet(fabric, &routing_tables, ingress, packet, destination).await;
             }
+
         }
     } else {
         // Open a TUN device using the first configured interface name.
@@ -119,13 +121,13 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
                 (ingress_b.clone(), Destination::TunA)
             };
             debug!("Processing packet from TUN on ingress {}", ingress.0);
-            if cfg.enable_multipath {
-                process_packet_multi(fabric, &multipath_tables, ingress, packet, destination).await;
+            let processed_packet = if cfg.enable_multipath {
+                process_packet_multi(fabric, &multipath_tables, ingress.clone(), packet, destination).await
             } else {
-                process_packet(fabric, &routing_tables, ingress, packet, destination).await;
-            }
+                process_packet(fabric, &routing_tables, ingress.clone(), packet, destination).await
+            };
             // Write packet back to TUN device (preserving any modifications to raw bytes)
-            if let Err(e) = async_dev.write_all(&packet.raw).await {
+            if let Err(e) = async_dev.write_all(&processed_packet.raw).await {
                 error!("Failed to write packet back to TUN device: {}", e);
                 break;
             }

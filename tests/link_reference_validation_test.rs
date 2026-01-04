@@ -1,25 +1,17 @@
 use network_simulator::config::SimulatorConfig;
 use std::collections::HashMap;
-use network_simulator::topology::link::LinkConfig;
+use toml;
 
 #[test]
-fn test_invalid_link_reference() {
-    // Config with routers A and B, but link references unknown router C
-    let mut topology = network_simulator::config::TopologyConfig {
-        routers: HashMap::new(),
-        links: HashMap::new(),
-    };
-    topology.routers.insert("Rx0y0".to_string(), toml::Value::String("".to_string()));
-    topology.routers.insert("Rx0y1".to_string(), toml::Value::String("".to_string()));
-    // link to unknown Rx0y2
-    topology.links.insert("Rx0y0_Rx0y2".to_string(), LinkConfig { mtu: None, delay_ms: 0, jitter_ms: 0, loss_percent: 0.0, load_balance: false });
-    let cfg = SimulatorConfig {
-        simulation: Default::default(),
-        interfaces: Default::default(),
-        tun_ingress: network_simulator::config::TunIngressConfig { tun_a_ingress: "Rx0y0".to_string(), tun_b_ingress: "Rx0y1".to_string() },
-        topology,
-        enable_multipath: false,
-        packet_file: None,
-    };
-    assert!(cfg.validate().is_err());
+fn test_link_reference_validation_fails_on_unknown_router() {
+    let toml_str = r#"
+        [topology]
+        routers = { Rx0y0 = {} }
+        links = { "Rx0y0_Rx1y1" = { delay_ms = 1 } }
+    "#;
+    let cfg: SimulatorConfig = toml::from_str(toml_str).expect("parse config");
+    let result = cfg.validate();
+    assert!(result.is_err(), "Validation should fail for unknown router in link");
+    let err_msg = result.err().unwrap();
+    assert!(err_msg.contains("unknown router"), "Error should mention unknown router");
 }
