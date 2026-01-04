@@ -68,6 +68,19 @@ impl SimulatorConfig {
     }
 }
 
+impl Default for SimulatorConfig {
+    fn default() -> Self {
+        Self {
+            simulation: SimulationConfig::default(),
+            interfaces: InterfacesConfig::default(),
+            tun_ingress: TunIngressConfig::default(),
+            topology: TopologyConfig::default(),
+            enable_multipath: false,
+            packet_file: None,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Default)]
 pub struct SimulationConfig {
     #[serde(default = "default_mtu")]

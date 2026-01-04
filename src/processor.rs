@@ -14,6 +14,14 @@ fn is_ipv6(packet: &PacketMeta) -> bool {
     matches!(packet.src_ip, std::net::IpAddr::V6(_))
 }
 
+/// Returns the opposite destination (used for ICMP replies).
+fn opposite_destination(dest: Destination) -> Destination {
+    match dest {
+        Destination::TunA => Destination::TunB,
+        Destination::TunB => Destination::TunA,
+    }
+}
+
 /// Process a packet using single‑path routing tables.
 /// Returns the packet after processing (may be modified, e.g., TTL decrement).
 pub async fn process_packet(
@@ -21,7 +29,7 @@ pub async fn process_packet(
     tables: &HashMap<RouterId, RoutingTable>,
     mut ingress: RouterId,
     mut packet: PacketMeta,
-    destination: Destination,
+    mut destination: Destination,
 ) -> PacketMeta {
     // Loop forwarding hop‑by‑hop until we cannot forward further.
     loop {
@@ -31,7 +39,7 @@ pub async fn process_packet(
             break;
         }
 
-        // Determine routing table for the current router.
+        // Get routing table for current router.
         let table = match tables.get(&ingress) {
             Some(t) => t,
             None => {
@@ -44,7 +52,7 @@ pub async fn process_packet(
             Destination::TunB => &table.tun_b.next_hop,
         };
 
-        // Simulate link characteristics.
+        // Simulate the link.
         if let Some(link) = fabric.get_link(&ingress, next_hop) {
             if let Err(e) = simulate_link(&link, &packet.raw).await {
                 // Packet dropped – possibly generate ICMP error.
@@ -54,14 +62,21 @@ pub async fn process_packet(
                     } else {
                         icmp::generate_icmp_error(&packet, 3, 4)
                     };
+                    // Increment ICMP counter for this router.
                     if let Some(node_idx) = fabric.router_index.get(&ingress) {
                         if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
                             router.increment_icmp();
                         }
                     }
-                    return packet::parse(&icmp_bytes).unwrap_or(packet);
+                    // Parse ICMP packet and set up reverse routing.
+                    if let Ok(icmp_packet) = packet::parse(&icmp_bytes) {
+                        packet = icmp_packet;
+                        destination = opposite_destination(destination);
+                        continue; // forward the ICMP reply
+                    } else {
+                        return packet;
+                    }
                 }
-                // For other drop reasons stop forwarding.
                 break;
             }
         } else {
@@ -72,7 +87,6 @@ pub async fn process_packet(
         // Move to next router.
         ingress = next_hop.clone();
     }
-    // Return the (possibly modified) packet after forwarding loop.
     packet
 }
 
@@ -80,12 +94,12 @@ pub async fn process_packet(
 /// Currently a placeholder that reuses single‑path logic.
 pub async fn process_packet_multi(
     fabric: &mut Fabric,
-    tables: &HashMap<RouterId, MultiPathTable>,
+    _tables: &HashMap<RouterId, MultiPathTable>,
     ingress: RouterId,
     packet: PacketMeta,
     destination: Destination,
 ) -> PacketMeta {
-    // Placeholder: construct a dummy single‑path routing table that forwards to itself.
+    // Construct a dummy single‑path routing table that forwards to itself.
     let dummy_entry = crate::routing::RouteEntry {
         next_hop: ingress.clone(),
         total_cost: 0,
