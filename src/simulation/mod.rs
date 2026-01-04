@@ -1,6 +1,6 @@
 // src/simulation/mod.rs
 
-use crate::topology::{Link, LinkConfig};
+use crate::topology::Link;
 use tracing::debug;
 use rand::Rng;
 use tokio::time::{sleep, Duration};
@@ -8,6 +8,9 @@ use tokio::time::{sleep, Duration};
 /// Apply link characteristics (delay, jitter, loss) to a packet.
 /// Returns `Ok(())` if the packet survives the link, or `Err` if it is dropped due to loss.
 pub async fn simulate_link(link: &Link, _packet: &[u8]) -> Result<(), &'static str> {
+    // Increment packet counter for load‑balancing statistics
+    use std::sync::atomic::Ordering;
+    link.counter.fetch_add(1, Ordering::Relaxed);
     // Simulate packet loss based on configured loss_percent (0.0 – 100.0).
     let mut rng = rand::thread_rng();
     if rng.gen_range(0.0..100.0) < link.cfg.loss_percent as f64 {

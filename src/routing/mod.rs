@@ -6,6 +6,9 @@ use crate::topology::{RouterId, Fabric};
 use petgraph::visit::EdgeRef;
 use petgraph::algo::dijkstra;
 
+pub mod multipath;
+pub use multipath::{MultiPathTable, compute_multi_path_routing};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Destination {
     TunA,
@@ -18,10 +21,22 @@ pub struct RouteEntry {
     pub total_cost: u32,
 }
 
+impl Default for RouteEntry {
+    fn default() -> Self {
+        RouteEntry { next_hop: RouterId("".to_string()), total_cost: 0 }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutingTable {
     pub tun_a: RouteEntry,
     pub tun_b: RouteEntry,
+}
+
+impl Default for RoutingTable {
+    fn default() -> Self {
+        RoutingTable { tun_a: RouteEntry::default(), tun_b: RouteEntry::default() }
+    }
 }
 
 /// Compute routing tables for all routers in the fabric.

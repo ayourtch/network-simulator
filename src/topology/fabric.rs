@@ -20,7 +20,7 @@ impl Fabric {
         let mut result = Vec::new();
         if let Some(&node_idx) = self.router_index.get(router_id) {
             for edge_ref in self.graph.edges(node_idx) {
-                result.push(edge_ref.weight().clone());
+                result.push((*edge_ref.weight()).clone());
             }
         }
         result

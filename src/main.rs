@@ -3,6 +3,8 @@
 use std::process;
 use clap::Parser;
 use tracing_subscriber::{fmt, EnvFilter};
+use network_simulator::config::SimulatorConfig;
+use std::fs;
 
 /// Simple CLI for the network simulator.
 #[derive(Parser, Debug)]
@@ -15,10 +17,14 @@ struct Args {
     /// Enable verbose (debug) logging
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
+
+    /// Enable multipath routing
+    #[arg(long, action = clap::ArgAction::SetTrue, help = "Enable multipath routing")]
+    multipath: bool,
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     // Initialise tracing subscriber – respects RUST_LOG and the -v flag.
@@ -31,8 +37,12 @@ async fn main() {
         .with_env_filter(filter)
         .init();
 
-    if let Err(e) = network_simulator::run(&args.config).await {
+    let cfg_str = fs::read_to_string(&args.config)?;
+    let mut cfg: SimulatorConfig = toml::from_str(&cfg_str)?;
+    cfg.enable_multipath = args.multipath;
+    if let Err(e) = network_simulator::run(cfg).await {
         eprintln!("Error: {}", e);
         process::exit(1);
     }
+    Ok(())
 }

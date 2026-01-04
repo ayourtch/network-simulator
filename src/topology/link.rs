@@ -44,3 +44,23 @@ pub struct Link {
     pub cfg: LinkConfig,
     pub counter: AtomicU64,
 }
+
+impl Link {
+    /// Return the current packet counter value.
+    pub fn counter(&self) -> u64 {
+        use std::sync::atomic::Ordering;
+        self.counter.load(Ordering::Relaxed)
+    }
+}
+
+impl Clone for Link {
+    fn clone(&self) -> Self {
+        use std::sync::atomic::Ordering;
+        Link {
+            id: self.id.clone(),
+            cfg: self.cfg.clone(),
+            counter: AtomicU64::new(self.counter.load(Ordering::Relaxed)),
+        }
+    }
+}
+
