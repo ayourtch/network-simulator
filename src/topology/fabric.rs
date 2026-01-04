@@ -5,7 +5,6 @@ use tracing::info;
 use std::collections::HashMap;
 use crate::topology::{Router, RouterId, Link, LinkId, LinkConfig, RouterStats};
 use petgraph::graph::EdgeIndex;
-// duplicate NodeIndex import removed
 
 #[derive(Debug)]
 pub struct Fabric {
@@ -25,6 +24,12 @@ impl Fabric {
             }
         }
         result
+    }
+
+    /// Retrieve a link between two routers, if it exists.
+    pub fn get_link(&self, a: &RouterId, b: &RouterId) -> Option<&Link> {
+        let id = LinkId::new(a.clone(), b.clone());
+        self.link_index.get(&id).and_then(|&edge_idx| self.graph.edge_weight(edge_idx))
     }
 
     /// Print statistics for all routers.

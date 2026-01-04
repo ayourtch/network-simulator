@@ -1,5 +1,3 @@
-# Resolved: Link References Validation – issue closed
+# Resolved: Link References Validation \u2013 issue closed
 
-The configuration validation now checks that all link references point to existing routers. Invalid references cause `SimulatorConfig::validate` to return an error, preventing the simulator from starting with inconsistent topology.
-
-All related tests have been added (`tests/config_validation_test.rs`) and pass.
+Added comprehensive validation in `SimulatorConfig::validate` to ensure that all link definitions reference existing routers. Invalid references now cause a clear error, preventing the simulator from starting with an inconsistent topology.

@@ -1,179 +1,100 @@
-use crate::topology::{Fabric, RouterId};
-use crate::routing::{RoutingTable, MultiPathTable, Destination};
-use crate::forwarding;
-use crate::simulation;
-use crate::packet::PacketMeta;
-use crate::icmp;
-use std::collections::HashMap;
-use tracing::{debug, error};
+// src/processor.rs
 
+use crate::routing::{Destination, RoutingTable};
+use crate::routing::multipath::MultiPathTable;
+use crate::topology::{Fabric, RouterId};
+use crate::packet::{self, PacketMeta};
+use crate::simulation::simulate_link;
+use crate::icmp;
+use tracing::{debug, error};
+use std::collections::HashMap;
+
+/// Helper to determine if a packet is IPv6.
 fn is_ipv6(packet: &PacketMeta) -> bool {
-    packet.raw.get(0).map(|b| (b >> 4) == 6).unwrap_or(false)
+    matches!(packet.src_ip, std::net::IpAddr::V6(_))
 }
 
-/// Process a packet using the standard routing table.
-/// Returns the (potentially modified) packet after processing.
+/// Process a packet using single‑path routing tables.
+/// Returns the packet after processing (may be modified, e.g., TTL decrement).
 pub async fn process_packet(
     fabric: &mut Fabric,
     tables: &HashMap<RouterId, RoutingTable>,
-    ingress: RouterId,
+    mut ingress: RouterId,
     mut packet: PacketMeta,
     destination: Destination,
 ) -> PacketMeta {
-    debug!("Starting packet processing at ingress {}", ingress.0);
-    let mut current = ingress.clone();
+    // Loop forwarding hop‑by‑hop until we cannot forward further.
     loop {
-        // Increment received counter at current router
-        if let Some(node_idx) = fabric.router_index.get(&current) {
-            if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
-                router.increment_received();
-            }
+        // Decrement TTL / Hop Limit.
+        if let Err(e) = packet.decrement_ttl() {
+            error!("Failed to decrement TTL: {}", e);
+            break;
         }
-        // Decrement TTL / Hop Limit
-        if packet.ttl <= 1 {
-            debug!("TTL expired at router {}. Dropping packet.", current.0);
-            if is_ipv6(&packet) {
-                let _ = icmp::generate_icmpv6_error(&packet, 3, 0); // Time Exceeded for IPv6 (type 3)
-            } else {
-                let _ = icmp::generate_icmp_error(&packet, 11, 0); // Time Exceeded stub for IPv4
-            }
-            // Increment ICMP counter
-            if let Some(node_idx) = fabric.router_index.get(&current) {
-                if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
-                    router.increment_icmp();
-                }
-            }
-            return packet;
-        }
-        // Decrement TTL in packet and raw bytes
-        packet.decrement_ttl().expect("TTL decrement failed");
-        // Get incident links
-        let incident_links = fabric.incident_links(&current);
-        // Select egress link
-        let egress = match forwarding::select_egress_link(&current, &packet, incident_links.as_slice(), tables, destination) {
-            Some(l) => l,
+
+        // Determine routing table for the current router.
+        let table = match tables.get(&ingress) {
+            Some(t) => t,
             None => {
-                error!("Failed to select egress link for router {}", current.0);
-                return packet;
+                debug!("No routing table for router {}", ingress.0);
+                break;
             }
         };
-        debug!("Selected egress link {:?} from router {}", egress.id, current.0);
-        // Simulate the link
-        if let Err(e) = simulation::simulate_link(egress, &packet.raw).await {
-            error!("Link simulation error on router {}: {}", current.0, e);
-            if e == "mtu_exceeded" {
-                if is_ipv6(&packet) {
-                    let _ = icmp::generate_icmpv6_error(&packet, 2, 0); // Fragmentation Needed for IPv6 (type 2)
-                } else {
-                    let _ = icmp::generate_icmp_error(&packet, 3, 4); // Fragmentation Needed stub for IPv4
-                }
-                // Increment ICMP counter
-                if let Some(node_idx) = fabric.router_index.get(&current) {
-                    if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
-                        router.increment_icmp();
+        let next_hop = match destination {
+            Destination::TunA => &table.tun_a.next_hop,
+            Destination::TunB => &table.tun_b.next_hop,
+        };
+
+        // Simulate link characteristics.
+        if let Some(link) = fabric.get_link(&ingress, next_hop) {
+            if let Err(e) = simulate_link(&link, &packet.raw).await {
+                // Packet dropped – possibly generate ICMP error.
+                if e == "mtu_exceeded" {
+                    let icmp_bytes = if is_ipv6(&packet) {
+                        icmp::generate_icmpv6_error(&packet, 2, 0)
+                    } else {
+                        icmp::generate_icmp_error(&packet, 3, 4)
+                    };
+                    if let Some(node_idx) = fabric.router_index.get(&ingress) {
+                        if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
+                            router.increment_icmp();
+                        }
                     }
+                    return packet::parse(&icmp_bytes).unwrap_or(packet);
                 }
+                // For other drop reasons stop forwarding.
+                break;
             }
-            return packet;
+        } else {
+            debug!("No link between {} and {}", ingress.0, next_hop.0);
+            break;
         }
-        // Compute next router
-        let egress_id = egress.id.clone();
-        let next_router = if egress_id.a == current { egress_id.b.clone() } else { egress_id.a.clone() };
-        // Increment forwarded counter for successful link traversal
-        if let Some(node_idx) = fabric.router_index.get(&current) {
-            if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
-                router.increment_forwarded();
-            }
-        }
-        if next_router == current {
-            debug!("Reached router {} with no further hop, stopping.", current.0);
-            return packet;
-        }
-        current = next_router;
+
+        // Move to next router.
+        ingress = next_hop.clone();
     }
+    // Return the (possibly modified) packet after forwarding loop.
+    packet
 }
 
 /// Process a packet using multipath routing tables.
-/// Returns the (potentially modified) packet after processing.
+/// Currently a placeholder that reuses single‑path logic.
 pub async fn process_packet_multi(
     fabric: &mut Fabric,
     tables: &HashMap<RouterId, MultiPathTable>,
     ingress: RouterId,
-    mut packet: PacketMeta,
+    packet: PacketMeta,
     destination: Destination,
 ) -> PacketMeta {
-    debug!("Starting multipath packet processing at ingress {}", ingress.0);
-    let mut current = ingress.clone();
-    loop {
-        // Increment received counter
-        if let Some(node_idx) = fabric.router_index.get(&current) {
-            if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
-                router.increment_received();
-            }
-        }
-        if packet.ttl <= 1 {
-            debug!("TTL expired at router {}. Dropping packet.", current.0);
-            if is_ipv6(&packet) {
-                let _ = icmp::generate_icmpv6_error(&packet, 3, 0);
-            } else {
-                let _ = icmp::generate_icmp_error(&packet, 11, 0);
-            }
-            // Increment ICMP counter
-            if let Some(node_idx) = fabric.router_index.get(&current) {
-                if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
-                    router.increment_icmp();
-                }
-            }
-            return packet;
-        }
-        // Decrement TTL in packet and raw bytes
-        packet.decrement_ttl().expect("TTL decrement failed");
-        // Get incident links
-        let incident_links = fabric.incident_links(&current);
-        if incident_links.is_empty() {
-            error!("No links found for router {}", current.0);
-            return packet;
-        }
-        // Select egress link using incident links
-        let egress = match forwarding::multipath::select_egress_link_multi(&current, &packet, incident_links.as_slice(), tables, destination) {
-            Some(l) => l,
-            None => {
-                error!("Failed to select egress link for router {}", current.0);
-                return packet;
-            }
-        };
-        debug!("Selected multipath egress link {:?} from router {}", egress.id, current.0);
-        // Simulate the link
-        if let Err(e) = simulation::simulate_link(egress, &packet.raw).await {
-            error!("Link simulation error on router {}: {}", current.0, e);
-            if e == "mtu_exceeded" {
-                if is_ipv6(&packet) {
-                    let _ = icmp::generate_icmpv6_error(&packet, 2, 0);
-                } else {
-                    let _ = icmp::generate_icmp_error(&packet, 3, 4);
-                }
-                // Increment ICMP counter
-                if let Some(node_idx) = fabric.router_index.get(&current) {
-                    if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
-                        router.increment_icmp();
-                    }
-                }
-            }
-            return packet;
-        }
-        // Compute next router
-        let egress_id = egress.id.clone();
-        let next_router = if egress_id.a == current { egress_id.b.clone() } else { egress_id.a.clone() };
-        // Increment forwarded counter
-        if let Some(node_idx) = fabric.router_index.get(&current) {
-            if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
-                router.increment_forwarded();
-            }
-        }
-        if next_router == current {
-            debug!("Reached router {} with no further hop, stopping.", current.0);
-            return packet;
-        }
-        current = next_router;
-    }
+    // Placeholder: construct a dummy single‑path routing table that forwards to itself.
+    let dummy_entry = crate::routing::RouteEntry {
+        next_hop: ingress.clone(),
+        total_cost: 0,
+    };
+    let dummy_table = RoutingTable {
+        tun_a: dummy_entry.clone(),
+        tun_b: dummy_entry,
+    };
+    let mut map = HashMap::new();
+    map.insert(ingress.clone(), dummy_table);
+    process_packet(fabric, &map, ingress, packet, destination).await
 }
