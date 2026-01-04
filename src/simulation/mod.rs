@@ -4,28 +4,17 @@ use crate::topology::Link;
 use tracing::debug;
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use tokio::time::{sleep, Duration};
 
-// Global RNG protected by a Mutex. Initialized lazily.
-static GLOBAL_RNG: once_cell::sync::Lazy<Mutex<Option<StdRng>>> = once_cell::sync::Lazy::new(|| Mutex::new(None));
+// Global RNG protected by a Mutex. Initialized with entropy, can be reseeded via init_rng.
+static GLOBAL_RNG: Lazy<Mutex<StdRng>> = Lazy::new(|| Mutex::new(StdRng::from_entropy()));
 
 /// Initialize the global RNG with a seed. Call once during startup if a seed is provided.
 pub fn init_rng(seed: u64) {
-    let mut guard = GLOBAL_RNG.lock().unwrap();
-    *guard = Some(StdRng::seed_from_u64(seed));
-}
-
-/// Obtain a mutable RNG. If the global RNG is set, use it; otherwise fall back to thread_rng.
-fn get_rng() -> Box<dyn RngCore> {
-    let mut guard = GLOBAL_RNG.lock().unwrap();
-    if let Some(ref mut rng) = *guard {
-        // Clone the StdRng to avoid holding the lock during usage.
-        let cloned = rng.clone();
-        Box::new(cloned)
-    } else {
-        Box::new(rand::thread_rng())
-    }
+    let mut rng = GLOBAL_RNG.lock().unwrap();
+    *rng = StdRng::seed_from_u64(seed);
 }
 
 /// Apply link characteristics (delay, jitter, loss) to a packet.
@@ -44,7 +33,7 @@ pub async fn simulate_link(link: &Link, packet: &[u8]) -> Result<(), &'static st
     }
 
     // Simulate packet loss based on configured loss_percent (0.0 – 100.0).
-    let mut rng = get_rng();
+    let mut rng = GLOBAL_RNG.lock().unwrap();
     if rng.gen_range(0.0..100.0) < link.cfg.loss_percent as f64 {
         debug!("Packet dropped on link {:?} due to loss ({}%)", link.id, link.cfg.loss_percent);
         return Err("packet lost");

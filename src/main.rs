@@ -69,6 +69,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // Validate configuration
     cfg.validate()?;
+    // Initialize RNG with seed if provided
+    if let Some(seed) = cfg.simulation.seed {
+        network_simulator::simulation::init_rng(seed);
+    }
     if let Err(e) = network_simulator::run(cfg).await {
         eprintln!("Error: {}", e);
         process::exit(1);

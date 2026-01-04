@@ -374,6 +374,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "hex",
+ "once_cell",
  "petgraph",
  "pnet",
  "predicates",

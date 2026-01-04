@@ -8,7 +8,7 @@ use crate::topology::router::RouterId;
 use crate::packet::parse;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tun::platform::Device as TunDevice;
 use tun::{Configuration};
 use std::os::unix::io::{AsRawFd, FromRawFd};
@@ -124,6 +124,12 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
             } else {
                 process_packet(fabric, &routing_tables, ingress, packet, destination).await;
             }
+            // Write packet back to TUN device (preserving any modifications to raw bytes)
+            if let Err(e) = async_dev.write_all(&packet.raw).await {
+                error!("Failed to write packet back to TUN device: {}", e);
+                break;
+            }
+
         }
     }
     Ok(())
