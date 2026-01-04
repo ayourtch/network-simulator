@@ -44,7 +44,7 @@ fn test_ipv6_parse_minimal() {
 #[test]
 fn test_ipv4_tcp_ports() {
     // IPv4 header (20 bytes) + TCP header (4 bytes for ports) with src port 12345, dst port 80
-    let mut data = vec![
+    let data = vec![
         0x45, 0x00, 0x00, 0x18, // version/IHL, TOS, total length 24
         0x00, 0x00, 0x00, 0x00, // ID, flags/frag
         0x40, 0x06, 0x00, 0x00, // TTL=64, protocol=6 (TCP), checksum
@@ -54,7 +54,6 @@ fn test_ipv4_tcp_ports() {
         0x30, 0x39, // src port 12345 (0x3039)
         0x00, 0x50, // dst port 80 (0x0050)
     ];
-    // Ensure length matches total_len
     let meta = parse(&data).expect("TCP packet parse should succeed");
     assert_eq!(meta.protocol, 6);
     assert_eq!(meta.src_port, 12345);
@@ -64,7 +63,7 @@ fn test_ipv4_tcp_ports() {
 #[test]
 fn test_ipv4_udp_ports() {
     // IPv4 header (20 bytes) + UDP header (4 bytes for ports) with src port 53, dst port 1234
-    let mut data = vec![
+    let data = vec![
         0x45, 0x00, 0x00, 0x18, // version/IHL, TOS, total length 24
         0x00, 0x00, 0x00, 0x00, // ID, flags/frag
         0x40, 0x11, 0x00, 0x00, // TTL=64, protocol=17 (UDP), checksum
