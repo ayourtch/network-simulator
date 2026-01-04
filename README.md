@@ -209,12 +209,6 @@ GitHub Actions runs the test suite on every push and PR.
 - Config parsing errors: validate TOML with `toml-cli validate`.
 - Logging not showing: check verbosity flags.
 
-## Roadmap
-
-- **v1.1**: IPv6 support.
-- **v1.2**: GUI front‑end.
-- **v2.0**: Distributed simulation.
-
 ## Contact
 
 maintainer@example.com
