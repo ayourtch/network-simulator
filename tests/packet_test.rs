@@ -6,7 +6,7 @@ fn test_ipv4_parse_minimal() {
     let data = vec![
         0x45, 0x00, 0x00, 0x14, // version/IHL, TOS, total length 20
         0x00, 0x00, 0x00, 0x00, // ID, flags/frag
-        0x40, 0x06, 0x00, 0x00, // TTL=64, protocol=6, checksum
+        0x40, 0x06, 0x00, 0x00, // TTL=64, protocol=6 (TCP), checksum
         192, 168, 1, 1, // src IP 192.168.1.1
         192, 168, 1, 2, // dst IP 192.168.1.2
     ];
@@ -15,6 +15,8 @@ fn test_ipv4_parse_minimal() {
     assert_eq!(meta.protocol, 6);
     assert_eq!(meta.src_ip.to_string(), "192.168.1.1");
     assert_eq!(meta.dst_ip.to_string(), "192.168.1.2");
+    assert_eq!(meta.src_port, 0);
+    assert_eq!(meta.dst_port, 0);
 }
 
 #[test]
@@ -35,4 +37,45 @@ fn test_ipv6_parse_minimal() {
     assert_eq!(meta.protocol, 17); // next header (UDP)
     assert_eq!(meta.src_ip.to_string(), "2001:db8::1");
     assert_eq!(meta.dst_ip.to_string(), "2001:db8::2");
+    assert_eq!(meta.src_port, 0);
+    assert_eq!(meta.dst_port, 0);
+}
+
+#[test]
+fn test_ipv4_tcp_ports() {
+    // IPv4 header (20 bytes) + TCP header (4 bytes for ports) with src port 12345, dst port 80
+    let mut data = vec![
+        0x45, 0x00, 0x00, 0x18, // version/IHL, TOS, total length 24
+        0x00, 0x00, 0x00, 0x00, // ID, flags/frag
+        0x40, 0x06, 0x00, 0x00, // TTL=64, protocol=6 (TCP), checksum
+        10, 0, 0, 1, // src IP 10.0.0.1
+        10, 0, 0, 2, // dst IP 10.0.0.2
+        // TCP ports
+        0x30, 0x39, // src port 12345 (0x3039)
+        0x00, 0x50, // dst port 80 (0x0050)
+    ];
+    // Ensure length matches total_len
+    let meta = parse(&data).expect("TCP packet parse should succeed");
+    assert_eq!(meta.protocol, 6);
+    assert_eq!(meta.src_port, 12345);
+    assert_eq!(meta.dst_port, 80);
+}
+
+#[test]
+fn test_ipv4_udp_ports() {
+    // IPv4 header (20 bytes) + UDP header (4 bytes for ports) with src port 53, dst port 1234
+    let mut data = vec![
+        0x45, 0x00, 0x00, 0x18, // version/IHL, TOS, total length 24
+        0x00, 0x00, 0x00, 0x00, // ID, flags/frag
+        0x40, 0x11, 0x00, 0x00, // TTL=64, protocol=17 (UDP), checksum
+        192, 168, 0, 1, // src IP 192.168.0.1
+        192, 168, 0, 2, // dst IP 192.168.0.2
+        // UDP ports
+        0x00, 0x35, // src port 53
+        0x04, 0xd2, // dst port 1234
+    ];
+    let meta = parse(&data).expect("UDP packet parse should succeed");
+    assert_eq!(meta.protocol, 17);
+    assert_eq!(meta.src_port, 53);
+    assert_eq!(meta.dst_port, 1234);
 }

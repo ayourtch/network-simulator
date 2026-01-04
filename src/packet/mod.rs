@@ -23,9 +23,9 @@ pub fn parse(data: &[u8]) -> Result<PacketMeta, &'static str> {
     let version_ihl = data[0];
     let version = version_ihl >> 4;
     if version == 4 {
-        // IPv4 parsing as before
-        let ihl = version_ihl & 0x0F;
-        if ihl < 5 {
+        // IPv4 parsing
+        let ihl = (version_ihl & 0x0F) as usize * 4;
+        if ihl < 20 {
             return Err("invalid IHL");
         }
         let total_len = u16::from_be_bytes([data[2], data[3]]) as usize;
@@ -36,12 +36,19 @@ pub fn parse(data: &[u8]) -> Result<PacketMeta, &'static str> {
         let protocol = data[9];
         let src_ip = Ipv4Addr::new(data[12], data[13], data[14], data[15]);
         let dst_ip = Ipv4Addr::new(data[16], data[17], data[18], data[19]);
-        // Ports are not present in raw IP header; set to 0 for stub.
+        // Extract ports for TCP/UDP if possible
+        let (src_port, dst_port) = if (protocol == 6 || protocol == 17) && data.len() >= ihl + 4 {
+            let sp = u16::from_be_bytes([data[ihl], data[ihl + 1]]);
+            let dp = u16::from_be_bytes([data[ihl + 2], data[ihl + 3]]);
+            (sp, dp)
+        } else {
+            (0, 0)
+        };
         return Ok(PacketMeta {
             src_ip: IpAddr::V4(src_ip),
             dst_ip: IpAddr::V4(dst_ip),
-            src_port: 0,
-            dst_port: 0,
+            src_port,
+            dst_port,
             protocol,
             ttl,
             customer_id: 0,
@@ -74,11 +81,20 @@ pub fn parse(data: &[u8]) -> Result<PacketMeta, &'static str> {
             u16::from_be_bytes([data[36], data[37]]),
             u16::from_be_bytes([data[38], data[39]]),
         );
+        // Extract ports for TCP/UDP if possible (offset after IPv6 header)
+        let transport_offset = 40;
+        let (src_port, dst_port) = if (next_header == 6 || next_header == 17) && data.len() >= transport_offset + 4 {
+            let sp = u16::from_be_bytes([data[transport_offset], data[transport_offset + 1]]);
+            let dp = u16::from_be_bytes([data[transport_offset + 2], data[transport_offset + 3]]);
+            (sp, dp)
+        } else {
+            (0, 0)
+        };
         return Ok(PacketMeta {
             src_ip: IpAddr::V6(src_ip),
             dst_ip: IpAddr::V6(dst_ip),
-            src_port: 0,
-            dst_port: 0,
+            src_port,
+            dst_port,
             protocol: next_header,
             ttl: hop_limit,
             customer_id: 0,
