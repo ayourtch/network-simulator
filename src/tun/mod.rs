@@ -12,7 +12,7 @@ use tokio::io::AsyncReadExt;
 use tun::platform::Device as TunDevice;
 use tun::{Configuration};
 use std::os::unix::io::{AsRawFd, FromRawFd};
-use tracing::{info, error, debug};
+use tracing::{info, error, debug, warn};
 use std::net::Ipv4Addr;
 // use crate::simulation; // unused currently
 
@@ -33,21 +33,22 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
     };
 
     // If a packet file is provided, process each line as a packet.
-    if let Some(ref path) = cfg.packet_file {
+    if let Some(ref path) = cfg.packet_file { // If the file is empty, no packets will be processed; the simulator will still run successfully
         info!("Reading mock packets from {}", path);
         let file = File::open(path)?;
         let reader = BufReader::new(file);
         for (idx, line_res) in reader.lines().enumerate() {
             let line = line_res?;
             let line = line.trim();
-            if line.is_empty() {
+            if line.is_empty() || line.starts_with('#') {
+                // Skip empty lines and comment lines starting with '#'
                 continue;
             }
             // Convert hex string to bytes.
             let bytes = match hex::decode(line) {
                 Ok(b) => b,
                 Err(e) => {
-                    error!("Failed to decode hex on line {}: {}", idx + 1, e);
+                    warn!("Failed to decode hex on line {}: {}", idx + 1, e);
                     continue;
                 }
             };

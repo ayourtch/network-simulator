@@ -31,6 +31,9 @@ struct Args {
     /// Optional real TUN device netmask (overrides config)
     #[arg(long)]
     tun_netmask: Option<String>,
+    /// Optional mock packet file (overrides config)
+    #[arg(short='p', long, help = "Path to a file containing hex‑encoded mock packets for the TUN interface")]
+    packet_file: Option<String>,
 }
 
 #[tokio::main]
@@ -59,6 +62,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if let Some(mask) = args.tun_netmask {
         cfg.interfaces.real_tun.netmask = mask;
+    }
+    // Override packet file if provided
+    if let Some(pf) = args.packet_file {
+        cfg.packet_file = Some(pf);
     }
     if let Err(e) = network_simulator::run(cfg).await {
         eprintln!("Error: {}", e);

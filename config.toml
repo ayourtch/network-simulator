@@ -2,6 +2,11 @@
 mtu = 1500
 
 [interfaces]
+# Optional real TUN device configuration (can be overridden via CLI)
+[interfaces.real_tun]
+name = "tun0"
+address = "10.0.0.1"
+netmask = "255.255.255.0"
 tun_a = "tunA"
 tun_b = "tunB"
 

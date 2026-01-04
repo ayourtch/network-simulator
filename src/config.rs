@@ -18,7 +18,7 @@ pub struct SimulatorConfig {
     #[serde(default = "default_enable_multipath")]
     pub enable_multipath: bool,
     #[serde(default)]
-    pub packet_file: Option<String>, // Path to file containing mock packets for TUN input
+    pub packet_file: Option<String>, // Optional path to a file containing hex‑encoded mock packets for the TUN interface (overridden by CLI flag)
 }
 
 #[derive(Debug, Deserialize, Default)]

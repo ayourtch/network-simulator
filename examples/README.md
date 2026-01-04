@@ -5,6 +5,9 @@ This directory contains a minimal configuration and instructions for running the
 ## `config.toml`
 A basic configuration is provided at the repository root (`config.toml`). It defines two routers (`Rx0y0` and `Rx5y5`) connected by a single link.
 
+# Optional mock packet file (overridden by CLI)
+packet_file = "path/to/packet_hex.txt"
+
 ## Running the simulator
 ```bash
 # Build the binary (if not already built)
@@ -14,14 +17,17 @@ cargo build --release
 ./target/release/network-simulator --config config.toml -vv
 ```
 
-## Overriding the real TUN device via CLI
-If you want to use a real TUN interface instead of the mock file, you can override the configuration values directly from the command line:
+## Overriding the real TUN device via CLI and config (including mock packet file)
+
+> Note: The `--packet-file` option ignores malformed lines (e.g., invalid hex strings) and logs a warning, continuing with valid packets.
+If you want to use a real TUN interface instead of the mock file, you can override the configuration values directly from the command line. Additionally, you can provide a mock packet file for testing:
 ```bash
 ./target/release/network-simulator \
     --config config.toml \
     --tun-name tun0 \
     --tun-address 10.0.0.2 \
     --tun-netmask 255.255.255.0 \
+    --packet-file path/to/packet_hex.txt \
     -vv
 ```
 The flags `--tun-name`, `--tun-address`, and `--tun-netmask` will replace the values under `[interfaces].real_tun`.

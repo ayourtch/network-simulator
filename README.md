@@ -91,7 +91,7 @@ Follow these three steps to get up and running quickly:
 git clone https://github.com/yourusername/network-simulator.git
 cd network-simulator
 cargo build --release
-./target/release/network-simulator --config config.toml -vv --multipath
+./target/release/network-simulator --config config.toml --packet-file path/to/packet_hex.txt -vv --multipath
 ```
 
 ## Usage
@@ -105,6 +105,7 @@ Supported options:
 - `--multipath` – enable multipath routing.
 - `--seed <N>` – set RNG seed.
 - `--debug` – increase log detail.
+- `--packet-file <PATH>` – provide a file with hex‑encoded packets for mock TUN input. Malformed lines are ignored with a warning; an empty file results in no packet processing but the simulator still runs.
 
 ## Configuration
 
@@ -116,6 +117,9 @@ seed = 42
 [interfaces]
 tun_a = "tunA"
 tun_b = "tunB"
+
+# Optional mock packet file (overridden by CLI)
+packet_file = "path/to/packet_hex.txt"
 
 # Real TUN device configuration (optional)
 [interfaces.real_tun]
@@ -135,14 +139,21 @@ enable_multipath = true
 
 ## Command-line Options
 
-Same as described in the **Usage** section.
+- `--packet-file <PATH>` – Provide a file with hex‑encoded packets for mock TUN input. Malformed lines are ignored with a warning. An empty file results in no packet processing but the simulator still runs successfully.
+- `--tun-name <NAME>` – Override the real TUN device name.
+- `--tun-address <IP>` – Override the real TUN device IPv4 address.
+- `--tun-netmask <MASK>` – Override the real TUN device netmask.
+- `--multipath` – Enable multipath routing.
+- `-v`/`-vv`/`-vvv` – Set logging verbosity.
+
+These correspond to the flags described in the **Usage** section.
 
 ## Examples
 
 See the `examples/README.md` for a quick start guide and sample configuration files.
 
 ```bash
-./target/release/network-simulator --config config.toml -vv --multipath
+./target/release/network-simulator --config config.toml --packet-file path/to/packet_hex.txt -vv --multipath
 ```
 
 ## Advanced Usage
