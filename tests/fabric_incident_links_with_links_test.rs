@@ -1,4 +1,4 @@
-use network_simulator::topology::{Fabric, RouterId, LinkConfig};
+use network_simulator::topology::{Fabric, Router, RouterId, LinkConfig};
 
 #[test]
 fn test_fabric_incident_links_with_links() {
