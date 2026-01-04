@@ -85,7 +85,7 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
         let mut async_dev = tokio::fs::File::from_std(std_file);
         let mut buf = vec![0u8; cfg.simulation.mtu as usize];
         // Graceful shutdown signal future.
-        let mut shutdown_signal = signal::ctrl_c();
+        let shutdown_signal = signal::ctrl_c();
         // Pin the shutdown future for select! macro.
         tokio::pin!(shutdown_signal);
         loop {
