@@ -20,6 +20,14 @@ pub struct SimulatorConfig {
     pub enable_multipath: bool,
     #[serde(default)]
     pub packet_file: Option<String>, // Optional path to a file containing hex‑encoded mock packets for the TUN interface (overridden by CLI flag)
+    #[serde(default)]
+    pub packet_files: Option<Vec<String>>, // Optional multiple packet files for mock TUNs
+    #[serde(default)]
+    pub packet_inject_tun: Option<String>, // Optional: "tun_a" or "tun_b" to force injection direction for single file
+    #[serde(default)]
+    pub packet_inject_tuns: Option<Vec<String>>, // Optional injection directions per file
+
+
 }
 
 impl SimulatorConfig {
@@ -77,6 +85,9 @@ impl Default for SimulatorConfig {
             topology: TopologyConfig::default(),
             enable_multipath: false,
             packet_file: None,
+            packet_files: None,
+            packet_inject_tun: None,
+            packet_inject_tuns: None,
         }
     }
 }

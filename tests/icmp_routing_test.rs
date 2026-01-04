@@ -1,4 +1,4 @@
-use network_simulator::{config::SimulatorConfig, topology::{Fabric, RouterId}, routing::Destination, processor::process_packet, packet::{self, PacketMeta}};
+use network_simulator::{config::SimulatorConfig, topology::{Fabric, RouterId}, routing::{Destination, compute_routing}, processor::process_packet, packet::{self, PacketMeta}};
 use std::net::IpAddr;
 
 #[tokio::test]
@@ -16,6 +16,8 @@ async fn test_icmp_routing_back_to_source() {
     fabric.add_router(r0.clone());
     fabric.add_router(r1.clone());
     fabric.add_link(&r0.id, &r1.id, cfg.topology.links["Rx0y0_Rx0y1"].clone());
+    // Compute routing tables (both routers are ingress for respective TUNs)
+    let tables = compute_routing(&fabric, RouterId("Rx0y0".to_string()), RouterId("Rx0y1".to_string()));
     // Create a large IPv6 packet (200 bytes) to exceed MTU.
     let raw = vec![0u8; 200];
     let packet = packet::parse(&raw).unwrap_or(PacketMeta {
@@ -28,7 +30,7 @@ async fn test_icmp_routing_back_to_source() {
         raw,
     });
     // Process packet from ingress Rx0y0 towards TunB.
-    let result = process_packet(&mut fabric, &std::collections::HashMap::new(), RouterId("Rx0y0".to_string()), packet, Destination::TunB).await;
+    let result = process_packet(&mut fabric, &tables, RouterId("Rx0y0".to_string()), packet, Destination::TunB).await;
     // The result should be an ICMP packet with src/dst swapped.
     assert_eq!(result.src_ip, "2001:db8::2".parse::<IpAddr>().unwrap());
     assert_eq!(result.dst_ip, "2001:db8::1".parse::<IpAddr>().unwrap());

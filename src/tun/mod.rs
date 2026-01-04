@@ -6,8 +6,8 @@ use crate::routing::{compute_routing, compute_multi_path_routing, Destination};
 use crate::processor::{process_packet, process_packet_multi};
 use crate::topology::router::RouterId;
 use crate::packet::parse;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::fs::{File, OpenOptions};
+use std::io::{BufRead, BufReader, Write};
 use tokio::select;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::signal;
@@ -39,9 +39,16 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
         info!("Reading mock packets from {}", path);
         let file = File::open(path)?;
         let reader = BufReader::new(file);
+        // Prepare output file to capture packets exiting the mock TUN.
+        let out_path = format!("{}_out.txt", path);
+        let mut out_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&out_path)
+            .map_err(|e| format!("Failed to open output file {}: {}", out_path, e))?;
         for (idx, line_res) in reader.lines().enumerate() {
-            let line = line_res?;
-            let line = line.trim();
+            let raw_line = line_res?;
+            let line = raw_line.trim();
             if line.is_empty() || line.starts_with('#') {
                 continue;
             }
@@ -59,16 +66,98 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
                     continue;
                 }
             };
-            let (ingress, destination) = if packet.src_ip.to_string().starts_with("10.") {
+            // Determine injection direction: use explicit config if provided, otherwise infer from IP.
+            let (ingress, destination) = if let Some(ref inject) = cfg.packet_inject_tun {
+                match inject.as_str() {
+                    "tun_a" => (ingress_a.clone(), Destination::TunB),
+                    "tun_b" => (ingress_b.clone(), Destination::TunA),
+                    _ => {
+                        // Fallback to IP based detection.
+                        if packet.src_ip.to_string().starts_with("10.") {
+                            (ingress_a.clone(), Destination::TunB)
+                        } else {
+                            (ingress_b.clone(), Destination::TunA)
+                        }
+                    }
+                }
+            } else if packet.src_ip.to_string().starts_with("10.") {
                 (ingress_a.clone(), Destination::TunB)
             } else {
                 (ingress_b.clone(), Destination::TunA)
             };
             debug!("Processing mock packet {} at ingress {}", idx + 1, ingress.0);
-            if cfg.enable_multipath {
-                let _ = process_packet_multi(fabric, &multipath_tables, ingress, packet, destination).await;
+            let processed = if cfg.enable_multipath {
+                process_packet_multi(fabric, &multipath_tables, ingress, packet, destination).await
             } else {
-                let _ = process_packet(fabric, &routing_tables, ingress, packet, destination).await;
+                process_packet(fabric, &routing_tables, ingress, packet, destination).await
+            };
+            // Write processed packet raw bytes as hex to output file.
+            let hex_str = hex::encode(&processed.raw);
+            if let Err(e) = writeln!(out_file, "{}", hex_str) {
+                error!("Failed to write processed packet to output file: {}", e);
+            }
+        }
+    } else if let Some(ref files) = cfg.packet_files {
+        // Multiple packet files handling.
+        let injects = cfg.packet_inject_tuns.clone().unwrap_or_default();
+        for (i, path) in files.iter().enumerate() {
+            info!("Reading mock packets from {}", path);
+            let file = File::open(path)?;
+            let reader = BufReader::new(file);
+            let out_path = format!("{}_out.txt", path);
+            let mut out_file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&out_path)
+                .map_err(|e| format!("Failed to open output file {}: {}", out_path, e))?;
+            let inject_opt = injects.get(i).cloned();
+            for (idx, line_res) in reader.lines().enumerate() {
+                let raw_line = line_res?;
+                let line = raw_line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                let bytes = match hex::decode(line) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        warn!("Failed to decode hex on line {}: {}", idx + 1, e);
+                        continue;
+                    }
+                };
+                let packet = match parse(&bytes) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        error!("Failed to parse packet on line {}: {}", idx + 1, e);
+                        continue;
+                    }
+                };
+                let (ingress, destination) = if let Some(ref inject) = inject_opt {
+                    match inject.as_str() {
+                        "tun_a" => (ingress_a.clone(), Destination::TunB),
+                        "tun_b" => (ingress_b.clone(), Destination::TunA),
+                        _ => {
+                            if packet.src_ip.to_string().starts_with("10.") {
+                                (ingress_a.clone(), Destination::TunB)
+                            } else {
+                                (ingress_b.clone(), Destination::TunA)
+                            }
+                        }
+                    }
+                } else if packet.src_ip.to_string().starts_with("10.") {
+                    (ingress_a.clone(), Destination::TunB)
+                } else {
+                    (ingress_b.clone(), Destination::TunA)
+                };
+                debug!("Processing mock packet {} at ingress {}", idx + 1, ingress.0);
+                let processed = if cfg.enable_multipath {
+                    process_packet_multi(fabric, &multipath_tables, ingress, packet, destination).await
+                } else {
+                    process_packet(fabric, &routing_tables, ingress, packet, destination).await
+                };
+                let hex_str = hex::encode(&processed.raw);
+                if let Err(e) = writeln!(out_file, "{}", hex_str) {
+                    error!("Failed to write processed packet to output file: {}", e);
+                }
             }
         }
     } else {

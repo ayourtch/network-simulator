@@ -1,5 +1,4 @@
 use network_simulator::config::SimulatorConfig;
-use std::collections::HashMap;
 use toml;
 
 #[test]

@@ -34,6 +34,9 @@ struct Args {
     /// Optional mock packet file (overrides config)
     #[arg(short='p', long, help = "Path to a file containing hex‑encoded mock packets for the TUN interface")]
     packet_file: Option<String>,
+    /// Optional multiple mock packet files (overrides config)
+    #[arg(long, action = clap::ArgAction::Append, help = "Additional packet files for mock TUNs")]
+    packet_files: Option<Vec<String>>,
 }
 
 #[tokio::main]
@@ -64,8 +67,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cfg.interfaces.real_tun.netmask = mask;
     }
     // Override packet file if provided
-    if let Some(pf) = args.packet_file {
-        cfg.packet_file = Some(pf);
+    if let Some(ref pf) = args.packet_file {
+        cfg.packet_file = Some(pf.clone());
+    }
+    // Override packet files if provided
+    if let Some(pfs) = args.packet_files {
+        cfg.packet_files = Some(pfs);
     }
     // Validate configuration
     cfg.validate()?;

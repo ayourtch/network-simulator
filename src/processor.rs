@@ -15,6 +15,9 @@ fn is_ipv6(packet: &PacketMeta) -> bool {
 }
 
 /// Returns the opposite destination (used for ICMP replies).
+/// Returns the opposite destination (used for ICMP replies).
+/// This function swaps the direction of traffic when generating an ICMP error response,
+/// so that the reply is sent back towards the original packet source.
 fn opposite_destination(dest: Destination) -> Destination {
     match dest {
         Destination::TunA => Destination::TunB,

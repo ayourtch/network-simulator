@@ -1,4 +1,4 @@
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 use std::fs;
 use std::io::Write;
 use tempfile::NamedTempFile;
@@ -41,7 +41,7 @@ packet_file = "unused_path"
     let cfg_path = "tests/tmp_config_packet.toml";
     fs::write(&cfg_path, cfg_content).expect("write config");
 
-    let mut cmd = Command::cargo_bin("network-simulator").expect("binary exists");
+    let mut cmd = cargo_bin_cmd!("network-simulator");
     cmd.arg("--config").arg(&cfg_path)
         .arg("--packet-file").arg(&packet_path)
         .arg("--tun-name").arg("tun_test0")

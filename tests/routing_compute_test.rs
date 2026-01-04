@@ -40,6 +40,9 @@ fn test_compute_routing_tables_counts() {
         },
         enable_multipath: false,
         packet_file: None,
+        packet_files: None,
+        packet_inject_tun: None,
+        packet_inject_tuns: None,
     };
 
     let tables = network_simulator::compute_routing_tables(&cfg);
@@ -82,6 +85,9 @@ fn test_compute_multipath_tables_when_enabled() {
         },
         enable_multipath: true,
         packet_file: None,
+        packet_files: None,
+        packet_inject_tun: None,
+        packet_inject_tuns: None,
     };
     let tables = network_simulator::compute_multipath_tables(&cfg);
     // Should have entries for each router.
@@ -100,6 +106,9 @@ fn test_compute_multipath_tables_when_disabled() {
         topology: TopologyConfig { routers: HashMap::new(), links: HashMap::new() },
         enable_multipath: false,
         packet_file: None,
+        packet_files: None,
+        packet_inject_tun: None,
+        packet_inject_tuns: None,
     };
     let tables = network_simulator::compute_multipath_tables(&cfg);
     assert!(tables.is_empty());

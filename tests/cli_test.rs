@@ -1,4 +1,4 @@
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 use std::fs;
 
 #[test]
@@ -25,7 +25,7 @@ Rx0y0_Rx5y5 = { delay_ms = 0 }
     let cfg_path = "tests/tmp_config.toml";
     fs::write(cfg_path, cfg_content).expect("write config");
 
-    let mut cmd = Command::cargo_bin("network-simulator").expect("binary exists");
+    let mut cmd = cargo_bin_cmd!("network-simulator");
     cmd.arg("--config").arg(cfg_path)
         .arg("--tun-name").arg("tun_test0")
         .arg("--tun-address").arg("10.1.0.1")

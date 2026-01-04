@@ -1,4 +1,4 @@
-use network_simulator::packet::{parse, PacketMeta, calculate_ipv4_checksum};
+use network_simulator::packet::{parse, calculate_ipv4_checksum};
 
 #[test]
 fn test_raw_packet_ttl_decrement_preserves_raw() {

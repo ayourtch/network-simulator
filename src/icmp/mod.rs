@@ -104,11 +104,3 @@ pub fn generate_icmp_error(_original: &PacketMeta, error_type: u8, code: u8) -> 
     payload
 }
 
-// Stub for future ICMPv6 generation – now replaced with full implementation above.
-// pub fn generate_icmpv6_error(_original: &PacketMeta, error_type: u8, code: u8) -> Vec<u8> {
-//     debug!("Generating ICMPv6 error type {} code {}", error_type, code);
-//     let mut payload = vec![0u8; 8];
-//     payload[0] = error_type;
-//     payload[1] = code;
-//     payload
-// }
