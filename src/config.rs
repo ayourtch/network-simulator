@@ -31,8 +31,6 @@ pub struct SimulatorConfig {
 }
 
 impl SimulatorConfig {
-    /// Validate configuration for logical consistency.
-    /// Currently checks for duplicate bidirectional links.
     pub fn validate(&self) -> Result<(), String> {
         // Ensure link definitions are unique regardless of direction.
         let mut seen: HashSet<(String, String)> = HashSet::new();
@@ -72,6 +70,27 @@ impl SimulatorConfig {
         // Also ensure ingress IDs are valid format
         RouterId(self.tun_ingress.tun_a_ingress.clone()).validate()?;
         RouterId(self.tun_ingress.tun_b_ingress.clone()).validate()?;
+        // Validate packet injection configuration consistency
+        if let (Some(files), Some(injects)) = (&self.packet_files, &self.packet_inject_tuns) {
+            if files.len() != injects.len() {
+                return Err(format!(
+                    "Number of packet files ({}) does not match number of injection directions ({})",
+                    files.len(),
+                    injects.len()
+                ));
+            }
+        }
+        // Ensure mutually exclusive use of single and multiple packet files
+        if self.packet_file.is_some() && self.packet_files.is_some() {
+            return Err("Both 'packet_file' and 'packet_files' are set; only one may be specified".to_string());
+        }
+        // Ensure injection direction specified only when corresponding packet file(s) are set
+        if self.packet_inject_tun.is_some() && self.packet_file.is_none() {
+            return Err("'packet_inject_tun' specified without a 'packet_file'".to_string());
+        }
+        if self.packet_inject_tuns.is_some() && self.packet_files.is_none() {
+            return Err("'packet_inject_tuns' specified without 'packet_files'".to_string());
+        }
         Ok(())
     }
 }
