@@ -12,7 +12,7 @@ use tracing::debug;
 pub fn select_egress_link_multi<'a>(
     router_id: &RouterId,
     packet: &PacketMeta,
-    links: &'a [Link],
+    links: &'a [&Link],
     tables: &HashMap<RouterId, MultiPathTable>,
 ) -> Option<&'a Link> {
     let table = tables.get(router_id)?;
@@ -25,7 +25,7 @@ pub fn select_egress_link_multi<'a>(
     if candidates_next_hops.is_empty() {
         // No routing info – fall back to any link.
         debug!("No multipath entries for router {}, falling back to any link", router_id.0);
-        return links.first();
+        return links.first().copied();
     }
     // Determine which next hop to use via packet hash.
     use std::hash::{Hash, Hasher};
@@ -42,6 +42,7 @@ pub fn select_egress_link_multi<'a>(
     // Find a link that connects to this next hop.
     let mut link_candidates: Vec<&Link> = links
         .iter()
+        .copied()
         .filter(|link| {
             (link.id.a == *router_id && link.id.b == chosen_next_hop.next_hop)
                 || (link.id.b == *router_id && link.id.a == chosen_next_hop.next_hop)
@@ -49,7 +50,7 @@ pub fn select_egress_link_multi<'a>(
         .collect();
     if link_candidates.is_empty() {
         // No direct link – fallback to all links (load‑balance may apply).
-        link_candidates = links.iter().collect();
+        link_candidates = links.iter().copied().collect();
     }
     // If any candidate link has load_balance enabled, pick one based on hash.
     let lb_links: Vec<&&Link> = link_candidates.iter().filter(|&&l| l.cfg.load_balance).collect();

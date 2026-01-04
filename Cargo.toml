@@ -18,6 +18,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # packet parsing library
 pnet = "0.33"
 clap = { version = "4", features = ["derive"] }
+hex = "0.4"
+# TUN/TAP interface support
+tun = "0.6"
 
 [dev-dependencies]
 assert_cmd = "2.0"

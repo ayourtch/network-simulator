@@ -1,5 +1,6 @@
-/// Configuration for the network simulator. Includes a flag to enable multipath routing.
+// src/config.rs
 
+/// Configuration for the network simulator. Includes a flag to enable multipath routing.
 
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -16,6 +17,8 @@ pub struct SimulatorConfig {
     pub topology: TopologyConfig,
     #[serde(default = "default_enable_multipath")]
     pub enable_multipath: bool,
+    #[serde(default)]
+    pub packet_file: Option<String>, // Path to file containing mock packets for TUN input
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -27,7 +30,6 @@ pub struct SimulationConfig {
 }
 
 fn default_enable_multipath() -> bool { false }
-
 fn default_mtu() -> u32 { 1500 }
 
 #[derive(Debug, Deserialize, Default)]

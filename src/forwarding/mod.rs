@@ -12,7 +12,7 @@ pub mod multipath;
 pub fn select_egress_link<'a>(
     router_id: &RouterId,
     packet: &PacketMeta,
-    links: &'a [Link],
+    links: &'a [&Link],
     tables: &HashMap<RouterId, crate::routing::RoutingTable>,
 ) -> Option<&'a Link> {
     debug!("Selecting egress link for router {}", router_id.0);
@@ -20,14 +20,14 @@ pub fn select_egress_link<'a>(
     let next_hop = &routing.tun_a.next_hop;
 
     // Gather candidate links that lead to the next_hop.
-    let mut candidates: Vec<&Link> = links.iter().filter(|link| {
+    let mut candidates: Vec<&Link> = links.iter().cloned().filter(|link| {
         (link.id.a == *router_id && link.id.b == *next_hop) ||
         (link.id.b == *router_id && link.id.a == *next_hop)
     }).collect();
 
     if candidates.is_empty() {
         // No direct link – fallback to all links for possible load‑balancing.
-        candidates = links.iter().collect();
+        candidates = links.iter().cloned().collect();
     }
 
     // If any candidate link has load_balance enabled, select based on packet hash.
