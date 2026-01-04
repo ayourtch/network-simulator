@@ -1,6 +1,6 @@
 // src/packet/mod.rs
 
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 /// Minimal packet metadata used by the simulator.
 #[derive(Debug, Clone)]
@@ -22,30 +22,69 @@ pub fn parse(data: &[u8]) -> Result<PacketMeta, &'static str> {
     }
     let version_ihl = data[0];
     let version = version_ihl >> 4;
-    if version != 4 {
-        return Err("only IPv4 parsing supported in stub");
+    if version == 4 {
+        // IPv4 parsing as before
+        let ihl = version_ihl & 0x0F;
+        if ihl < 5 {
+            return Err("invalid IHL");
+        }
+        let total_len = u16::from_be_bytes([data[2], data[3]]) as usize;
+        if data.len() < total_len {
+            return Err("packet length less than total_len");
+        }
+        let ttl = data[8];
+        let protocol = data[9];
+        let src_ip = Ipv4Addr::new(data[12], data[13], data[14], data[15]);
+        let dst_ip = Ipv4Addr::new(data[16], data[17], data[18], data[19]);
+        // Ports are not present in raw IP header; set to 0 for stub.
+        return Ok(PacketMeta {
+            src_ip: IpAddr::V4(src_ip),
+            dst_ip: IpAddr::V4(dst_ip),
+            src_port: 0,
+            dst_port: 0,
+            protocol,
+            ttl,
+            customer_id: 0,
+        });
+    } else if version == 6 {
+        // IPv6 parsing
+        if data.len() < 40 {
+            return Err("packet too short for IPv6 header");
+        }
+        // Next Header field at offset 6, Hop Limit at offset 7
+        let next_header = data[6];
+        let hop_limit = data[7];
+        let src_ip = Ipv6Addr::new(
+            u16::from_be_bytes([data[8], data[9]]),
+            u16::from_be_bytes([data[10], data[11]]),
+            u16::from_be_bytes([data[12], data[13]]),
+            u16::from_be_bytes([data[14], data[15]]),
+            u16::from_be_bytes([data[16], data[17]]),
+            u16::from_be_bytes([data[18], data[19]]),
+            u16::from_be_bytes([data[20], data[21]]),
+            u16::from_be_bytes([data[22], data[23]]),
+        );
+        let dst_ip = Ipv6Addr::new(
+            u16::from_be_bytes([data[24], data[25]]),
+            u16::from_be_bytes([data[26], data[27]]),
+            u16::from_be_bytes([data[28], data[29]]),
+            u16::from_be_bytes([data[30], data[31]]),
+            u16::from_be_bytes([data[32], data[33]]),
+            u16::from_be_bytes([data[34], data[35]]),
+            u16::from_be_bytes([data[36], data[37]]),
+            u16::from_be_bytes([data[38], data[39]]),
+        );
+        return Ok(PacketMeta {
+            src_ip: IpAddr::V6(src_ip),
+            dst_ip: IpAddr::V6(dst_ip),
+            src_port: 0,
+            dst_port: 0,
+            protocol: next_header,
+            ttl: hop_limit,
+            customer_id: 0,
+        });
+    } else {
+        return Err("unsupported IP version");
     }
-    let ihl = version_ihl & 0x0F;
-    if ihl < 5 {
-        return Err("invalid IHL");
-    }
-    let total_len = u16::from_be_bytes([data[2], data[3]]) as usize;
-    if data.len() < total_len {
-        return Err("packet length less than total_len");
-    }
-    let ttl = data[8];
-    let protocol = data[9];
-    let src_ip = Ipv4Addr::new(data[12], data[13], data[14], data[15]);
-    let dst_ip = Ipv4Addr::new(data[16], data[17], data[18], data[19]);
-    // Ports are not present in raw IP header; set to 0 for stub.
-    Ok(PacketMeta {
-        src_ip: IpAddr::V4(src_ip),
-        dst_ip: IpAddr::V4(dst_ip),
-        src_port: 0,
-        dst_port: 0,
-        protocol,
-        ttl,
-        customer_id: 0,
-    })
 }
 

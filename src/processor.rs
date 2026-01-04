@@ -11,9 +11,16 @@ pub async fn process_packet(
     fabric: &Fabric,
     tables: &HashMap<RouterId, RoutingTable>,
     ingress: RouterId,
-    packet: PacketMeta,
+    mut packet: PacketMeta,
 ) {
     debug!("Processing packet at ingress {}", ingress.0);
+    // Decrement TTL / Hop Limit
+    if packet.ttl <= 1 {
+        // TTL expired, drop packet
+        debug!("TTL expired for packet at router {}. Dropping packet.", ingress.0);
+        return;
+    }
+    packet.ttl -= 1;
     let incident = fabric.incident_links(&ingress);
     if incident.is_empty() {
         error!("No links found for router {}", ingress.0);
@@ -40,9 +47,15 @@ pub async fn process_packet_multi(
     fabric: &Fabric,
     tables: &HashMap<RouterId, MultiPathTable>,
     ingress: RouterId,
-    packet: PacketMeta,
+    mut packet: PacketMeta,
 ) {
     debug!("Processing packet (multipath) at ingress {}", ingress.0);
+    // Decrement TTL / Hop Limit
+    if packet.ttl <= 1 {
+        debug!("TTL expired for packet at router {}. Dropping packet.", ingress.0);
+        return;
+    }
+    packet.ttl -= 1;
     let incident = fabric.incident_links(&ingress);
     if incident.is_empty() {
         error!("No links found for router {}", ingress.0);
