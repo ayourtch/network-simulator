@@ -32,7 +32,7 @@ fn test_multipath_forwarding_load_balance() {
         dst_port: 80,
         protocol: 6,
         ttl: 64,
-        customer_id: 0,
+        //customer_id: 0,
     };
     // Packet 2 with different src_ip
     let packet2 = PacketMeta {
@@ -42,7 +42,7 @@ fn test_multipath_forwarding_load_balance() {
         dst_port: 80,
         protocol: 6,
         ttl: 64,
-        customer_id: 0,
+        //customer_id: 0,
     };
     let link1 = select_egress_link_multi(&ingress_a, &packet1, incident.as_slice(), &tables).expect("no link selected");
     let link2 = select_egress_link_multi(&ingress_a, &packet2, incident.as_slice(), &tables).expect("no link selected");

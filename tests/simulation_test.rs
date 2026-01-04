@@ -33,7 +33,7 @@ async fn test_link_simulation_and_load_balancing() {
         dst_port: 80,
         protocol: 6,
         ttl: 64,
-        customer_id: 0,
+        //customer_id: 0,
     };
 
     // Select egress link from r1

@@ -133,7 +133,7 @@ pub async fn run(cfg: SimulatorConfig) -> Result<(), Box<dyn std::error::Error>>
             dst_port: 80,
             protocol: 6, // TCP
             ttl: 64,
-            customer_id: 0,
+            //customer_id: 0,
         };
         debug!("Processing dummy packet at router {}", first_router_id.0);
         // Use single-path forwarding for now

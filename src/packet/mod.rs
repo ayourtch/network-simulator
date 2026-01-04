@@ -11,7 +11,7 @@ pub struct PacketMeta {
     pub dst_port: u16,
     pub protocol: u8, // TCP=6, UDP=17, ICMP=1, ICMPv6=58
     pub ttl: u8,
-    pub customer_id: u32,
+    // removed unused virtual customer identifier
 }
 
 /// Stub parser – in the full version this would decode raw bytes using the `pnet` crate.
@@ -51,7 +51,7 @@ pub fn parse(data: &[u8]) -> Result<PacketMeta, &'static str> {
             dst_port,
             protocol,
             ttl,
-            customer_id: 0,
+            //customer_id removed
         });
     } else if version == 6 {
         // IPv6 parsing
@@ -97,7 +97,7 @@ pub fn parse(data: &[u8]) -> Result<PacketMeta, &'static str> {
             dst_port,
             protocol: next_header,
             ttl: hop_limit,
-            customer_id: 0,
+            //customer_id removed
         });
     } else {
         return Err("unsupported IP version");
