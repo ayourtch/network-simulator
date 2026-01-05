@@ -1,5 +1,4 @@
 use network_simulator::{config::SimulatorConfig, topology::{Fabric, RouterId}, routing::{compute_routing, Destination}, processor::process_packet, packet::parse};
-use std::net::IpAddr;
 
 #[tokio::test]
 async fn test_end_to_end_packet_processing() {
