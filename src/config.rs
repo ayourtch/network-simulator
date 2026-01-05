@@ -128,6 +128,19 @@ impl SimulatorConfig {
         // Also ensure ingress IDs are valid format
         RouterId(self.tun_ingress.tun_a_ingress.clone()).validate()?;
         RouterId(self.tun_ingress.tun_b_ingress.clone()).validate()?;
+        // Validate real TUN IPv4 address and netmask fields
+        let rt_a = &self.interfaces.real_tun_a;
+        let rt_b = &self.interfaces.real_tun_b;
+        for (label, cfg) in &["real_tun_a", rt_a], &["real_tun_b", rt_b] {
+            // address
+            if cfg.address.parse::<Ipv4Addr>().is_err() {
+                return Err(format!("Invalid IPv4 address for {}.address: '{}'", label, cfg.address));
+            }
+            // netmask
+            if cfg.netmask.parse::<Ipv4Addr>().is_err() {
+                return Err(format!("Invalid IPv4 netmask for {}.netmask: '{}'", label, cfg.netmask));
+            }
+        }
         Ok(())
     }
 }
