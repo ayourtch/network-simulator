@@ -38,11 +38,15 @@ impl Router {
     pub fn increment_icmp(&mut self) {
         self.stats.icmp_generated += 1;
     }
+    pub fn increment_lost(&mut self) {
+        self.stats.packets_lost += 1;
+    }
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct RouterStats {
     pub packets_received: u64,
     pub packets_forwarded: u64,
+    pub packets_lost: u64,
     pub icmp_generated: u64,
 }

@@ -4,7 +4,9 @@ use crate::routing::{Destination, RoutingTable};
 use crate::routing::multipath::MultiPathTable;
 use crate::topology::{Fabric, RouterId};
 use crate::packet::{self, PacketMeta};
-use crate::simulation::simulate_link;
+
+use crate::simulation::{simulate_link, SimulationError};
+use crate::forwarding::select_egress_link;
 use crate::icmp;
 use tracing::{debug, error};
 use std::collections::HashMap;
@@ -100,46 +102,67 @@ pub async fn process_packet(
             break;
         }
 
-        // Simulate the link.
-        if let Some(link) = fabric.get_link(&ingress, next_hop) {
-            if let Err(e) = simulate_link(&link, &packet.raw).await {
-                // Packet dropped – possibly generate ICMP error.
-                if e == "mtu_exceeded" {
+        // Select egress link using forwarding engine (supports load‑balancing).
+        let incident_links = fabric.incident_links(&ingress);
+        let link_opt = select_egress_link(&ingress, &packet, &incident_links, tables, destination);
+        let link = match link_opt {
+            Some(l) => l,
+            None => {
+                debug!("No egress link selected for router {}", ingress.0);
+                break;
+            }
+        };
+        // Determine the next hop router from the selected link.
+        let next_hop = if link.id.a == ingress {
+            link.id.b.clone()
+        } else {
+            link.id.a.clone()
+        };
+        if let Err(e) = simulate_link(link, &packet.raw).await {
+            match e {
+                SimulationError::MtuExceeded { .. } => {
                     let icmp_bytes = if is_ipv6(&packet) {
                         icmp::generate_icmpv6_error(&packet, 2, 0)
                     } else {
                         icmp::generate_icmp_error(&packet, 3, 4)
                     };
-                    // Increment ICMP counter for this router.
                     if let Some(node_idx) = fabric.router_index.get(&ingress) {
                         if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
                             router.increment_icmp();
                         }
                     }
-                    // Parse ICMP packet and set up reverse routing.
                     if let Ok(icmp_packet) = packet::parse(&icmp_bytes) {
                         packet = icmp_packet;
                         destination = opposite_destination(destination);
-                        continue; // forward the ICMP reply
+                        continue;
                     } else {
                         return packet;
                     }
+                },
+                SimulationError::PacketLost => {
+                    debug!("Packet lost on link between {} and {}", ingress.0, next_hop.0);
+                    if let Some(node_idx) = fabric.router_index.get(&ingress) {
+                        if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
+                            router.increment_lost();
+                        }
+                    }
+                    break;
+                },
+                _ => {
+                    break;
                 }
-                break;
             }
+        } else {
             // Successful forwarding – increment forwarded counter.
             if let Some(node_idx) = fabric.router_index.get(&ingress) {
                 if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
                     router.increment_forwarded();
                 }
             }
-        } else {
-            debug!("No link between {} and {}", ingress.0, next_hop.0);
-            break;
+            // Move to next router for next hop.
+            ingress = next_hop.clone();
+            continue;
         }
-
-        // Move to next router.
-        ingress = next_hop.clone();
     }
     packet
 }
@@ -215,26 +238,39 @@ pub async fn process_packet_multi(
         // Simulate the link.
         if let Some(link) = fabric.get_link(&ingress, next_hop_id) {
             if let Err(e) = simulate_link(&link, &packet.raw).await {
-                if e == "mtu_exceeded" {
-                    let icmp_bytes = if is_ipv6(&packet) {
-                        icmp::generate_icmpv6_error(&packet, 2, 0)
-                    } else {
-                        icmp::generate_icmp_error(&packet, 3, 4)
-                    };
-                    if let Some(node_idx) = fabric.router_index.get(&ingress) {
-                        if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
-                            router.increment_icmp();
+                match e {
+                    SimulationError::MtuExceeded { .. } => {
+                        let icmp_bytes = if is_ipv6(&packet) {
+                            icmp::generate_icmpv6_error(&packet, 2, 0)
+                        } else {
+                            icmp::generate_icmp_error(&packet, 3, 4)
+                        };
+                        if let Some(node_idx) = fabric.router_index.get(&ingress) {
+                            if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
+                                router.increment_icmp();
+                            }
                         }
-                    }
-                    if let Ok(icmp_packet) = packet::parse(&icmp_bytes) {
-                        packet = icmp_packet;
-                        destination = opposite_destination(destination);
-                        continue;
-                    } else {
-                        return packet;
+                        if let Ok(icmp_packet) = packet::parse(&icmp_bytes) {
+                            packet = icmp_packet;
+                            destination = opposite_destination(destination);
+                            continue;
+                        } else {
+                            return packet;
+                        }
+                    },
+                    SimulationError::PacketLost => {
+                        debug!("Packet lost on link between {} and {}", ingress.0, next_hop_id.0);
+                        if let Some(node_idx) = fabric.router_index.get(&ingress) {
+                            if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
+                                router.increment_lost();
+                            }
+                        }
+                        break;
+                    },
+                    _ => {
+                        break;
                     }
                 }
-                break;
             }
             // Successful forwarding – increment counter.
             if let Some(node_idx) = fabric.router_index.get(&ingress) {

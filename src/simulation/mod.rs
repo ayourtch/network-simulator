@@ -7,6 +7,7 @@ use rand::rngs::StdRng;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use tokio::time::{sleep, Duration};
+use thiserror::Error;
 
 // Global RNG protected by a Mutex. Initialized with entropy, can be reseeded via init_rng.
 static GLOBAL_RNG: Lazy<Mutex<StdRng>> = Lazy::new(|| Mutex::new(StdRng::from_entropy()));
@@ -17,9 +18,20 @@ pub fn init_rng(seed: u64) {
     *rng = StdRng::seed_from_u64(seed);
 }
 
+/// Errors that can arise during link simulation.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum SimulationError {
+    #[error("Packet lost due to link loss simulation")]
+    PacketLost,
+    #[error("Packet size {packet_size} exceeds MTU {mtu}")]
+    MtuExceeded { packet_size: usize, mtu: u32 },
+    #[error("Other simulation error: {0}")]
+    Other(String),
+}
+
 /// Apply link characteristics (delay, jitter, loss) to a packet.
-/// Returns `Ok(())` if the packet survives the link, or `Err` if it is dropped due to loss.
-pub async fn simulate_link(link: &Link, packet: &[u8]) -> Result<(), &'static str> {
+/// Returns `Ok(())` if the packet survives the link, or `Err` if it is dropped due to loss or other issues.
+pub async fn simulate_link(link: &Link, packet: &[u8]) -> Result<(), SimulationError> {
     // Increment packet counter for load‑balancing statistics
     use std::sync::atomic::Ordering;
     link.counter.fetch_add(1, Ordering::Relaxed);
@@ -28,7 +40,7 @@ pub async fn simulate_link(link: &Link, packet: &[u8]) -> Result<(), &'static st
     if let Some(mtu) = link.cfg.mtu {
         if packet.len() > mtu as usize {
             debug!("Packet size {} exceeds MTU {} on link {:?}", packet.len(), mtu, link.id);
-            return Err("mtu_exceeded");
+            return Err(SimulationError::MtuExceeded { packet_size: packet.len(), mtu });
         }
     }
 
@@ -36,7 +48,7 @@ pub async fn simulate_link(link: &Link, packet: &[u8]) -> Result<(), &'static st
     let mut rng = GLOBAL_RNG.lock().unwrap();
     if rng.gen_range(0.0..100.0) < link.cfg.loss_percent as f64 {
         debug!("Packet dropped on link {:?} due to loss ({}%)", link.id, link.cfg.loss_percent);
-        return Err("packet lost");
+        return Err(SimulationError::PacketLost);
     }
 
     // Compute jitter as symmetric offset and total delay = base delay + jitter (can be negative).
