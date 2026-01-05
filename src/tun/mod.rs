@@ -8,6 +8,7 @@ use crate::topology::router::RouterId;
 use crate::packet::parse;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
+use std::net::Ipv4Addr;
 use tokio::select;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::signal;
@@ -232,7 +233,7 @@ fn create_async_tun(name: &str, addr_str: &str, netmask_str: &str) -> Result<tok
             }
         },
     }
-    use std::os::unix::io::IntoRawFd;
+    use std::os::fd::{FromRawFd, IntoRawFd};
     let dev = TunDevice::new(&cfg)
         .map_err(|e| format!("Failed to create TUN device {}: {}", name, e))?;
     let raw_fd = dev.into_raw_fd();
