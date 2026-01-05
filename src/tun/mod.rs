@@ -261,12 +261,9 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
                 } else if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_b_ipv6_prefix) {
                     (ingress_b.clone(), Destination::TunA)
                 } else {
-                    // Default fallback to original heuristic (10.)
-                    if packet.src_ip.to_string().starts_with("10.") {
-                        (ingress_a.clone(), Destination::TunB)
-                    } else {
-                        (ingress_b.clone(), Destination::TunA)
-                    }
+                    // Default fallback: no CIDR prefix matched. Log warning and default to ingress A.
+                    warn!("No CIDR prefix matched for source IP {}. Defaulting to ingress A.", packet.src_ip);
+                    (ingress_a.clone(), Destination::TunB)
                 }
             };
             debug!("Processing mock packet {} at ingress {}", idx + 1, ingress.0);
@@ -352,12 +349,9 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
                     } else if ip_in_prefix(src_ip, &cfg.tun_ingress.tun_b_ipv6_prefix) {
                         (ingress_b.clone(), Destination::TunA)
                     } else {
-                        // Default fallback to original heuristic (10.)
-                        if src_ip.to_string().starts_with("10.") {
-                            (ingress_a.clone(), Destination::TunB)
-                        } else {
-                            (ingress_b.clone(), Destination::TunA)
-                        }
+                        // Default fallback: no CIDR prefix matched. Log warning and default to ingress A.
+                        warn!("No CIDR prefix matched for source IP {}. Defaulting to ingress A.", src_ip);
+                        (ingress_a.clone(), Destination::TunB)
                     }
                 };
                 let processed = if cfg.enable_multipath {
