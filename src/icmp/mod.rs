@@ -96,11 +96,74 @@ pub fn generate_icmpv6_error(packet: &PacketMeta, error_type: u8, code: u8) -> V
 }
 
 /// Generate a minimal ICMP error packet for IPv4 (stub).
-pub fn generate_icmp_error(_original: &PacketMeta, error_type: u8, code: u8) -> Vec<u8> {
+// Generate a proper ICMP error packet for IPv4.
+// `error_type` and `code` follow the ICMP specification.
+pub fn generate_icmp_error(original: &PacketMeta, error_type: u8, code: u8) -> Vec<u8> {
     debug!("Generating ICMP error type {} code {}", error_type, code);
-    let mut payload = vec![0u8; 8];
-    payload[0] = error_type;
-    payload[1] = code;
-    payload
+    const IPV4_HEADER_LEN: usize = 20;
+    const ICMP_HEADER_LEN: usize = 8;
+    const ORIGINAL_INCLUDE_LEN: usize = 28; // IP header (20) + 8 bytes of payload
+    let mut packet = Vec::with_capacity(IPV4_HEADER_LEN + ICMP_HEADER_LEN + ORIGINAL_INCLUDE_LEN);
+    // IPv4 header
+    packet.push(0x45); // Version 4, IHL 5
+    packet.push(0x00); // DSCP/ECN
+    // Total length placeholder
+    packet.extend_from_slice(&[0, 0]);
+    packet.extend_from_slice(&[0, 0]); // Identification
+    packet.extend_from_slice(&[0, 0]); // Flags+Fragment Offset
+    packet.push(64); // TTL
+    packet.push(1); // Protocol = ICMP
+    packet.extend_from_slice(&[0, 0]); // Header checksum placeholder
+    // Source = original destination (router)
+    let src_ip = match original.dst_ip {
+        std::net::IpAddr::V4(a) => a.octets(),
+        _ => [0, 0, 0, 0],
+    };
+    packet.extend_from_slice(&src_ip);
+    // Destination = original source
+    let dst_ip = match original.src_ip {
+        std::net::IpAddr::V4(a) => a.octets(),
+        _ => [0, 0, 0, 0],
+    };
+    packet.extend_from_slice(&dst_ip);
+    // ICMP header
+    packet.push(error_type);
+    packet.push(code);
+    packet.extend_from_slice(&[0, 0]); // Checksum placeholder
+    packet.extend_from_slice(&[0, 0, 0, 0]); // Unused/MTU field
+    // Include original IP header + first 8 bytes of payload
+    let copy_len = std::cmp::min(ORIGINAL_INCLUDE_LEN, original.raw.len());
+    packet.extend_from_slice(&original.raw[..copy_len]);
+    // Set total length
+    let total_len = packet.len() as u16;
+    packet[2] = (total_len >> 8) as u8;
+    packet[3] = (total_len & 0xFF) as u8;
+    // Compute IPv4 header checksum
+    crate::packet::update_ipv4_checksum(&mut packet[..IPV4_HEADER_LEN]);
+    // Compute ICMP checksum
+    let icmp_start = IPV4_HEADER_LEN;
+    let icmp_checksum = calculate_icmp_checksum(&packet[icmp_start..]);
+    packet[icmp_start + 2] = (icmp_checksum >> 8) as u8;
+    packet[icmp_start + 3] = (icmp_checksum & 0xFF) as u8;
+    packet
+}
+
+/// Calculate ICMP checksum (RFC 792) over the provided slice.
+fn calculate_icmp_checksum(data: &[u8]) -> u16 {
+    let mut sum: u32 = 0;
+    let mut i = 0;
+    while i + 1 < data.len() {
+        let word = u16::from_be_bytes([data[i], data[i + 1]]) as u32;
+        sum += word;
+        i += 2;
+    }
+    if i < data.len() {
+        let word = (data[i] as u32) << 8;
+        sum += word;
+    }
+    while (sum >> 16) != 0 {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+    !(sum as u16)
 }
 
