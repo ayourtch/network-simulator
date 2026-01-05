@@ -51,6 +51,23 @@ This guide shows how to run the network simulator with two **real** TUN interfac
    [topology]
    # define routers and links as needed …
    ```
+
+   **IPv6 Example**
+   ```toml
+   [interfaces]
+   real_tun_a = { name = "tun0a", address = "2001:db8::1", netmask = "64" }
+   real_tun_b = { name = "tun0b", address = "2001:db8::2", netmask = "64" }
+
+   [tun_ingress]
+   tun_a_ingress = "Rx0y0"
+   tun_b_ingress = "Rx0y1"
+   tun_a_ipv6_prefix = "::/0"
+   tun_b_ipv6_prefix = "::/0"
+
+   [topology]
+   # define routers and links as needed …
+   ```
+   Use the same steps 1‑3, but replace the IPv4 `ip addr add` commands with IPv6 equivalents, e.g., `sudo ip netns exec ns1 ip -6 addr add 2001:db8::1/64 dev tun0a` and bring the interface up with `ip -6 link set tun0a up`.
 5. **Run the simulator**
    ```bash
    sudo ./target/release/network-simulator --config dual_tun.toml --stats
