@@ -42,11 +42,17 @@ A valid ICMP error packet should contain:
 
 1. Replace the stub with a full implementation:
 ```rust
+// Constants for ICMP packet structure
+const IPV4_HEADER_LEN: usize = 20;
+const ICMP_HEADER_LEN: usize = 8;
+const ORIGINAL_PACKET_INCLUDE_LEN: usize = 28;  // IP header (20) + 8 bytes of payload
+const MIN_ICMP_ERROR_PACKET_SIZE: usize = IPV4_HEADER_LEN + ICMP_HEADER_LEN + ORIGINAL_PACKET_INCLUDE_LEN;
+
 /// Generate a proper ICMP error packet for IPv4.
 pub fn generate_icmp_error(original: &PacketMeta, error_type: u8, code: u8) -> Vec<u8> {
     debug!("Generating ICMP error type {} code {}", error_type, code);
     
-    let mut packet = Vec::with_capacity(56); // IP(20) + ICMP(8) + Original(28)
+    let mut packet = Vec::with_capacity(MIN_ICMP_ERROR_PACKET_SIZE);
     
     // Build IPv4 header
     packet.push(0x45); // Version 4, IHL 5

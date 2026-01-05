@@ -42,11 +42,16 @@ Issues:
 1. Create proper error types for simulation:
 ```rust
 // In src/simulation/mod.rs
-#[derive(Debug, Clone, PartialEq, Eq)]
+use thiserror::Error;
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum SimulationError {
+    #[error("Packet lost due to link loss simulation")]
     PacketLost,
+    #[error("Packet size {packet_size} exceeds MTU {mtu}")]
     MtuExceeded { packet_size: usize, mtu: u32 },
-    Other(String),
+    #[error("Link error: {0}")]
+    LinkError(#[from] std::io::Error),
 }
 
 pub async fn simulate_link(link: &Link, packet: &[u8]) -> Result<(), SimulationError> {

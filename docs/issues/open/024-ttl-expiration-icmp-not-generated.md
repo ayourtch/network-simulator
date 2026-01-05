@@ -70,15 +70,11 @@ loop {
 }
 ```
 
-2. Update `PacketMeta::decrement_ttl()` to check for TTL=1:
-```rust
-pub fn decrement_ttl(&mut self) -> Result<(), &'static str> {
-    if self.ttl <= 1 {
-        return Err("TTL would expire");
-    }
-    // ... rest of implementation
-}
-```
+2. Note on TTL semantics:
+   - TTL=1 means the packet can be processed by the current router but should not be forwarded further
+   - Check should happen BEFORE forwarding: if TTL will be 0 after decrement, generate ICMP
+   - The existing `decrement_ttl()` correctly checks `if self.ttl == 0` for already-expired packets
+   - The processor should check `if packet.ttl <= 1` before forwarding (TTL would be 0 or negative after decrement)
 
 3. Add unit test for TTL expiration handling:
 ```rust

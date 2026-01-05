@@ -58,15 +58,11 @@ let dev = tun::create_as_async(&config)
 // No need for raw fd manipulation
 ```
 
-3. Alternative: Keep TunDevice alive to prevent fd closure:
+3. **Note**: The ManuallyDrop approach creates a memory leak and should NOT be used:
 ```rust
-// Store TunDevice in a struct or use ManuallyDrop to prevent it from being dropped
-use std::mem::ManuallyDrop;
-
-let dev = ManuallyDrop::new(TunDevice::new(&config)?);
-let std_file = unsafe { std::fs::File::from_raw_fd(dev.as_raw_fd()) };
-// dev is never dropped, so fd stays valid
-// But this leaks the TunDevice - not ideal
+// DON'T DO THIS - Memory leak!
+// ManuallyDrop prevents the TunDevice from being cleaned up
+// This is only documented here to show what NOT to do
 ```
 
 4. Preferred solution - use tun crate's async API if available:
