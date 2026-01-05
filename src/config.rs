@@ -26,6 +26,8 @@ pub struct SimulatorConfig {
     pub packet_inject_tun: Option<String>, // Optional: "tun_a" or "tun_b" to force injection direction for single file
     #[serde(default)]
     pub packet_inject_tuns: Option<Vec<String>>, // Optional injection directions per file
+    #[serde(default)]
+    pub virtual_customer: Option<VirtualCustomerConfig>, // Optional virtual customer configuration
 
 
 }
@@ -173,6 +175,7 @@ impl Default for SimulatorConfig {
             packet_files: None,
             packet_inject_tun: None,
             packet_inject_tuns: None,
+            virtual_customer: None,
         }
     }
 }
@@ -242,6 +245,16 @@ fn default_prefix_a() -> String { "10.".to_string() }
 fn default_prefix_b() -> String { "".to_string() }
 fn default_ipv6_prefix_a() -> String { "".to_string() }
 fn default_ipv6_prefix_b() -> String { "".to_string() }
+
+#[derive(Debug, Deserialize, Default)]
+pub struct VirtualCustomerConfig {
+    // Example fields for a virtual traffic generator
+    pub src_ip: Option<String>,
+    pub dst_ip: Option<String>,
+    pub protocol: Option<u8>, // e.g., 6 for TCP, 17 for UDP
+    pub size: Option<usize>, // packet size in bytes
+    pub rate: Option<u64>, // packets per second
+}
 
 #[derive(Debug, Deserialize, Default)]
 pub struct TopologyConfig {

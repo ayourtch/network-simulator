@@ -6,16 +6,32 @@ use crate::routing::{compute_routing, compute_multi_path_routing, Destination};
 use crate::processor::{process_packet, process_packet_multi};
 use crate::topology::router::RouterId;
 use crate::packet::{calculate_ipv4_checksum, PacketMeta, parse};
+use crate::routing::RoutingTable;
+use crate::routing::multipath::MultiPathTable;
+use crate::config::VirtualCustomerConfig;
+
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
+use std::time::Duration;
 use std::net::Ipv4Addr;
 use tokio::select;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::signal;
 use ipnet::IpNet;
+use futures::future::pending;
+
+fn ip_in_prefix(ip: &std::net::IpAddr, prefix: &str) -> bool {
+    if prefix.is_empty() { return false; }
+    match prefix.parse::<IpNet>() {
+        Ok(net) => net.contains(ip),
+        Err(_) => false,
+    }
+}
+
 
 use tun::platform::Device as TunDevice;
 use tun::{Configuration};
+
 
 use tracing::{info, error, debug, warn};
 
@@ -26,6 +42,9 @@ use tracing::{info, error, debug, warn};
 /// and forwards it through the fabric using the appropriate routing tables.
 /// In a full implementation this would interact with real TUN devices.
 pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box<dyn std::error::Error>> {
+    // ip_in_prefix helper defined at module level above
+    // Optional interval for periodic virtual‑customer packet generation
+    let mut vc_interval: Option<tokio::time::Interval> = None;
     // Compute routing tables once.
     let ingress_a = RouterId(cfg.tun_ingress.tun_a_ingress.clone());
     let ingress_b = RouterId(cfg.tun_ingress.tun_b_ingress.clone());
@@ -35,73 +54,24 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
     } else {
         std::collections::HashMap::new()
     };
-    let ip_in_prefix = |ip: &std::net::IpAddr, prefix: &str| -> bool {
-        if prefix.is_empty() { return false; }
-        match prefix.parse::<IpNet>() {
-            Ok(net) => net.contains(ip),
-            Err(_) => false,
-        }
-    };
+    // ip_in_prefix function defined above; vc_interval already declared above
 
 
-    // Virtual customer packet generation
+    // Virtual customer packet generation (burst)
     if let Some(vc) = &cfg.virtual_customer {
-        if let (Some(src_str), Some(dst_str)) = (&vc.src_ip, &vc.dst_ip) {
-            if let (Ok(src_ip), Ok(dst_ip)) = (
-                src_str.parse::<std::net::Ipv4Addr>(),
-                dst_str.parse::<std::net::Ipv4Addr>(),
-            ) {
-                let mut raw = vec![0u8; 20];
-                raw[0] = 0x45;
-                raw[1] = 0;
-                raw[2] = 0; raw[3] = 20;
-                raw[4] = 0; raw[5] = 0;
-                raw[6] = 0; raw[7] = 0;
-                raw[8] = 64;
-                raw[9] = vc.protocol.unwrap_or(6);
-                raw[10] = 0; raw[11] = 0;
-                raw[12..16].copy_from_slice(&src_ip.octets());
-                raw[16..20].copy_from_slice(&dst_ip.octets());
-                let checksum = calculate_ipv4_checksum(&raw);
-                raw[10] = (checksum >> 8) as u8;
-                raw[11] = (checksum & 0xFF) as u8;
-                let packet = PacketMeta {
-                    src_ip: std::net::IpAddr::V4(src_ip),
-                    dst_ip: std::net::IpAddr::V4(dst_ip),
-                    src_port: 0,
-                    dst_port: 0,
-                    protocol: raw[9],
-                    ttl: 64,
-                    raw,
-                };
-                let (ingress, destination) = if let Some(ref inject) = cfg.packet_inject_tun {
-                    match inject.as_str() {
-                        "tun_a" => (ingress_a.clone(), Destination::TunB),
-                        "tun_b" => (ingress_b.clone(), Destination::TunA),
-                        _ => (ingress_a.clone(), Destination::TunB),
-                    }
-                } else {
-                    if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_a_prefix) {
-                        (ingress_a.clone(), Destination::TunB)
-                    } else if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_b_prefix) {
-                        (ingress_b.clone(), Destination::TunA)
-                    } else {
-                        (ingress_a.clone(), Destination::TunB)
-                    }
-                };
-                debug!("Processing virtual customer packet at ingress {}", ingress.0);
-                if cfg.enable_multipath {
-                    process_packet_multi(fabric, &multipath_tables, ingress, packet, destination).await;
-                } else {
-                    process_packet(fabric, &routing_tables, ingress, packet, destination).await;
-                }
-            } else {
-                warn!("Invalid IPs in virtual_customer: src='{}', dst='{}'", src_str, dst_str);
-            }
-        } else {
-            warn!("virtual_customer missing src_ip or dst_ip");
+        // Initial burst based on rate (default 1)
+        let packet_count = vc.rate.unwrap_or(1) as usize;
+        for _ in 0..packet_count {
+            generate_virtual_packet(vc, cfg, fabric, &routing_tables, &multipath_tables, &ingress_a, &ingress_b).await;
         }
-    }    if let Some(ref path) = cfg.packet_file {
+        // Setup periodic interval if rate > 0
+        if let Some(rate) = vc.rate {
+            if rate > 0 {
+                vc_interval = Some(tokio::time::interval(std::time::Duration::from_secs_f64(1.0 / rate as f64)));
+            }
+        }
+    }
+    if let Some(ref path) = cfg.packet_file {
         info!("Reading mock packets from {}", path);
         let file = File::open(path)?;
         let reader = BufReader::new(file);
@@ -278,8 +248,124 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
                 }
             }
         }
+
+    // Helper function to generate a virtual‑customer packet
+async fn generate_virtual_packet(
+    vc: &VirtualCustomerConfig,
+    cfg: &SimulatorConfig,
+    fabric: &mut Fabric,
+    routing_tables: &std::collections::HashMap<RouterId, RoutingTable>,
+    multipath_tables: &std::collections::HashMap<RouterId, MultiPathTable>,
+    ingress_a: &RouterId,
+    ingress_b: &RouterId,
+) {
+    // Determine ingress based on CIDR prefixes using the module‑level ip_in_prefix
+    if let (Some(src_str), Some(dst_str)) = (&vc.src_ip, &vc.dst_ip) {
+        // IPv4 handling
+        if let (Ok(src_ip), Ok(dst_ip)) = (
+            src_str.parse::<std::net::Ipv4Addr>(),
+            dst_str.parse::<std::net::Ipv4Addr>(),
+        ) {
+            let mut raw = vec![0u8; 20];
+            raw[0] = 0x45;
+            raw[1] = 0;
+            raw[2] = 0; raw[3] = 20;
+            raw[4] = 0; raw[5] = 0;
+            raw[6] = 0; raw[7] = 0;
+            raw[8] = 64;
+            raw[9] = vc.protocol.unwrap_or(6);
+            raw[10] = 0; raw[11] = 0;
+            raw[12..16].copy_from_slice(&src_ip.octets());
+            raw[16..20].copy_from_slice(&dst_ip.octets());
+            if let Some(sz) = vc.size { raw.extend(vec![0u8; sz]); }
+            let checksum = calculate_ipv4_checksum(&raw);
+            raw[10] = (checksum >> 8) as u8;
+            raw[11] = (checksum & 0xFF) as u8;
+            let packet = PacketMeta {
+                src_ip: std::net::IpAddr::V4(src_ip),
+                dst_ip: std::net::IpAddr::V4(dst_ip),
+                src_port: 0,
+                dst_port: 0,
+                protocol: raw[9],
+                ttl: 64,
+                raw,
+            };
+            let (ingress, destination) = if let Some(ref inject) = cfg.packet_inject_tun {
+                match inject.as_str() {
+                    "tun_a" => (ingress_a.clone(), Destination::TunB),
+                    "tun_b" => (ingress_b.clone(), Destination::TunA),
+                    _ => (ingress_a.clone(), Destination::TunB),
+                }
+            } else {
+                if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_a_prefix) {
+                    (ingress_a.clone(), Destination::TunB)
+                } else if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_b_prefix) {
+                    (ingress_b.clone(), Destination::TunA)
+                } else {
+                    (ingress_a.clone(), Destination::TunB)
+                }
+            };
+            debug!("Processing virtual customer IPv4 packet at ingress {}", ingress.0);
+            if cfg.enable_multipath {
+                process_packet_multi(fabric, multipath_tables, ingress, packet, destination).await;
+            } else {
+                process_packet(fabric, routing_tables, ingress, packet, destination).await;
+            }
+        } else if let (Ok(src_ip), Ok(dst_ip)) = (
+            src_str.parse::<std::net::Ipv6Addr>(),
+            dst_str.parse::<std::net::Ipv6Addr>(),
+        ) {
+            // IPv6 handling
+            let mut raw = vec![0u8; 40];
+            raw[0] = 0x60;
+            let payload_len_pos = 4;
+            raw[payload_len_pos] = 0; raw[payload_len_pos+1] = 0;
+            raw[6] = vc.protocol.unwrap_or(6);
+            raw[7] = 64;
+            raw[8..24].copy_from_slice(&src_ip.octets());
+            raw[24..40].copy_from_slice(&dst_ip.octets());
+            if let Some(sz) = vc.size { raw.extend(vec![0u8; sz]); }
+            let payload_len = (raw.len() - 40) as u16;
+            raw[payload_len_pos] = (payload_len >> 8) as u8;
+            raw[payload_len_pos+1] = (payload_len & 0xFF) as u8;
+            let packet = PacketMeta {
+                src_ip: std::net::IpAddr::V6(src_ip),
+                dst_ip: std::net::IpAddr::V6(dst_ip),
+                src_port: 0,
+                dst_port: 0,
+                protocol: raw[6],
+                ttl: raw[7],
+                raw,
+            };
+            let (ingress, destination) = if let Some(ref inject) = cfg.packet_inject_tun {
+                match inject.as_str() {
+                    "tun_a" => (ingress_a.clone(), Destination::TunB),
+                    "tun_b" => (ingress_b.clone(), Destination::TunA),
+                    _ => (ingress_a.clone(), Destination::TunB),
+                }
+            } else {
+                if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_a_prefix) {
+                    (ingress_a.clone(), Destination::TunB)
+                } else if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_b_prefix) {
+                    (ingress_b.clone(), Destination::TunA)
+                } else {
+                    (ingress_a.clone(), Destination::TunB)
+                }
+            };
+            debug!("Processing virtual customer IPv6 packet at ingress {}", ingress.0);
+            if cfg.enable_multipath {
+                process_packet_multi(fabric, multipath_tables, ingress, packet, destination).await;
+            } else {
+                process_packet(fabric, routing_tables, ingress, packet, destination).await;
+            }
+        } else {
+            warn!("Invalid IPs in virtual_customer: src='{}', dst='{}'", src_str, dst_str);
+        }
     } else {
-        // Open two real TUN devices (real_tun_a and real_tun_b).
+        warn!("virtual_customer missing src_ip or dst_ip");
+    }
+}
+// Open two real TUN devices (real_tun_a and real_tun_b).
 // Packets read from tun_a are considered ingress_a and sent out via tun_b, and vice versa.
 
 // Helper to create async TUN device from config.
@@ -335,6 +421,19 @@ let shutdown_signal = signal::ctrl_c();
 tokio::pin!(shutdown_signal);
 loop {
     select! {
+        // Periodic virtual‑customer generation tick
+        _ = async {
+            if let Some(ref mut int) = vc_interval {
+                int.tick().await;
+            } else {
+                pending::<()>().await;
+            }
+        } => {
+            if let Some(vc) = &cfg.virtual_customer {
+                generate_virtual_packet(vc, cfg, fabric, &routing_tables, &multipath_tables, &ingress_a, &ingress_b).await;
+            }
+        },
+
         // Read from TUN A, forward to B.
         read_res = async_dev_a.read(&mut buf_a) => {
             let n = match read_res {

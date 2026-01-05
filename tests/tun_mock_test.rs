@@ -22,7 +22,14 @@ fn test_tun_mock_packet_processing() {
     let cfg = SimulatorConfig {
         simulation: Default::default(),
         interfaces: Default::default(),
-        tun_ingress: TunIngressConfig { tun_a_ingress: "Rx0y0".to_string(), tun_b_ingress: "Rx0y1".to_string(), tun_a_prefix: "".to_string(), tun_b_prefix: "".to_string() },
+        tun_ingress: TunIngressConfig {
+            tun_a_ingress: "Rx0y0".to_string(),
+            tun_b_ingress: "Rx0y1".to_string(),
+            tun_a_prefix: "".to_string(),
+            tun_b_prefix: "".to_string(),
+            tun_a_ipv6_prefix: "".to_string(),
+            tun_b_ipv6_prefix: "".to_string(),
+        },
         topology: TopologyConfig {
             routers: {
                 let mut map = HashMap::new();
@@ -44,6 +51,7 @@ fn test_tun_mock_packet_processing() {
         packet_files: None,
         packet_inject_tun: None,
         packet_inject_tuns: None,
+        virtual_customer: None,
     };
 
     // Build fabric as in lib::run.

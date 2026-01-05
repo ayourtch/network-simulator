@@ -25,7 +25,14 @@ fn test_multiple_mock_packet_files_injection() {
     let cfg = SimulatorConfig {
         simulation: Default::default(),
         interfaces: Default::default(),
-        tun_ingress: TunIngressConfig { tun_a_ingress: "Rx0y0".to_string(), tun_b_ingress: "Rx0y1".to_string(), tun_a_prefix: "".to_string(), tun_b_prefix: "".to_string() },
+        tun_ingress: TunIngressConfig {
+            tun_a_ingress: "Rx0y0".to_string(),
+            tun_b_ingress: "Rx0y1".to_string(),
+            tun_a_prefix: "".to_string(),
+            tun_b_prefix: "".to_string(),
+            tun_a_ipv6_prefix: "".to_string(),
+            tun_b_ipv6_prefix: "".to_string(),
+        },
         topology: TopologyConfig {
             routers: {
                 let mut map = HashMap::new();
@@ -47,6 +54,7 @@ fn test_multiple_mock_packet_files_injection() {
         packet_files: Some(vec![path1.clone(), path2.clone()]),
         packet_inject_tun: None,
         packet_inject_tuns: Some(vec!["tun_a".to_string(), "tun_b".to_string()]),
+        virtual_customer: None,
     };
 
     // Build fabric.

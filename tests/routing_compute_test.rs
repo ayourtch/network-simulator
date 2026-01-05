@@ -18,6 +18,8 @@ fn test_compute_routing_tables_counts() {
             tun_b_ingress: "Rx0y1".to_string(),
             tun_a_prefix: "".to_string(),
             tun_b_prefix: "".to_string(),
+            tun_a_ipv6_prefix: "".to_string(),
+            tun_b_ipv6_prefix: "".to_string(),
         },
         topology: TopologyConfig {
             routers: {
@@ -45,6 +47,7 @@ fn test_compute_routing_tables_counts() {
         packet_files: None,
         packet_inject_tun: None,
         packet_inject_tuns: None,
+        virtual_customer: None,
     };
 
     let tables = network_simulator::compute_routing_tables(&cfg);
@@ -65,6 +68,8 @@ fn test_compute_multipath_tables_when_enabled() {
             tun_b_ingress: "Rx0y1".to_string(),
             tun_a_prefix: "".to_string(),
             tun_b_prefix: "".to_string(),
+            tun_a_ipv6_prefix: "".to_string(),
+            tun_b_ipv6_prefix: "".to_string(),
         },
         topology: TopologyConfig {
             routers: {
@@ -92,6 +97,7 @@ fn test_compute_multipath_tables_when_enabled() {
         packet_files: None,
         packet_inject_tun: None,
         packet_inject_tuns: None,
+        virtual_customer: None,
     };
     let tables = network_simulator::compute_multipath_tables(&cfg);
     // Should have entries for each router.
@@ -113,6 +119,7 @@ fn test_compute_multipath_tables_when_disabled() {
         packet_files: None,
         packet_inject_tun: None,
         packet_inject_tuns: None,
+        virtual_customer: None,
     };
     let tables = network_simulator::compute_multipath_tables(&cfg);
     assert!(tables.is_empty());
