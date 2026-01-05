@@ -399,9 +399,13 @@ fn create_async_tun(name: &str, addr_str: &str, netmask_str: &str) -> Result<tok
             #[cfg(target_os = "linux")] {
                 use std::process::Command;
                 let addr_with_prefix = format!("{}/{}", addr_str, prefix);
-                let _ = Command::new("ip")
+                let status = Command::new("ip")
                     .args(["-6", "addr", "add", &addr_with_prefix, "dev", name])
-                    .status();
+                    .status()
+                    .map_err(|e| format!("Failed to execute ip command for {}: {}", name, e))?;
+                if !status.success() {
+                    return Err(format!("ip command failed for {} with exit code {:?}", name, status.code()));
+                }
             }
         },
     }
