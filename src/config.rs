@@ -230,12 +230,18 @@ pub struct TunIngressConfig {
     pub tun_a_prefix: String,
     #[serde(default = "default_prefix_b")]
     pub tun_b_prefix: String,
+    #[serde(default = "default_ipv6_prefix_a")]
+    pub tun_a_ipv6_prefix: String,
+    #[serde(default = "default_ipv6_prefix_b")]
+    pub tun_b_ipv6_prefix: String,
 }
 
 fn default_ingress_a() -> String { "Rx0y0".to_string() }
 fn default_ingress_b() -> String { "Rx5y5".to_string() }
 fn default_prefix_a() -> String { "10.".to_string() }
 fn default_prefix_b() -> String { "".to_string() }
+fn default_ipv6_prefix_a() -> String { "".to_string() }
+fn default_ipv6_prefix_b() -> String { "".to_string() }
 
 #[derive(Debug, Deserialize, Default)]
 pub struct TopologyConfig {
