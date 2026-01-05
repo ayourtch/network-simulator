@@ -235,6 +235,11 @@ pub async fn process_packet_multi(
         }
         // Choose a next hop using a hash of the packet 5‑tuple.
         let next_hop_id = select_next_hop_by_hash(&packet, entries);
+        // Destination detection: if next hop is the current router, packet has arrived at its destination.
+        if next_hop_id == &ingress {
+            debug!("Packet reached destination router {}", ingress.0);
+            break;
+        }
         // Simulate the link.
         if let Some(link) = fabric.get_link(&ingress, next_hop_id) {
             if let Err(e) = simulate_link(&link, &packet.raw).await {
