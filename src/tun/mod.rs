@@ -14,9 +14,9 @@ use tokio::signal;
 
 use tun::platform::Device as TunDevice;
 use tun::{Configuration};
-use std::os::unix::io::{FromRawFd};
+
 use tracing::{info, error, debug, warn};
-use std::net::Ipv4Addr;
+
 
 /// Mock TUN handling.
 /// If `packet_file` is specified in the config, each line of the file should contain a hex-encoded
