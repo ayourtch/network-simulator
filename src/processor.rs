@@ -346,17 +346,3 @@ pub async fn process_packet_multi(
     packet
 }
 
-// Select a next‑hop router from a list of equal‑cost entries using a hash of the packet's 5‑tuple.
-fn select_next_hop_by_hash<'a>(packet: &PacketMeta, entries: &'a [crate::routing::RouteEntry]) -> &'a RouterId {
-    use std::hash::{Hash, Hasher};
-    use std::collections::hash_map::DefaultHasher;
-    let mut hasher = DefaultHasher::new();
-    packet.src_ip.hash(&mut hasher);
-    packet.dst_ip.hash(&mut hasher);
-    packet.src_port.hash(&mut hasher);
-    packet.dst_port.hash(&mut hasher);
-    packet.protocol.hash(&mut hasher);
-    let hash = hasher.finish();
-    let idx = (hash as usize) % entries.len();
-    &entries[idx].next_hop
-}
