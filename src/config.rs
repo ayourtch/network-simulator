@@ -243,8 +243,8 @@ fn default_ingress_a() -> String { "Rx0y0".to_string() }
 fn default_ingress_b() -> String { "Rx5y5".to_string() }
 fn default_prefix_a() -> String { "10.".to_string() }
 fn default_prefix_b() -> String { "".to_string() }
-fn default_ipv6_prefix_a() -> String { "".to_string() }
-fn default_ipv6_prefix_b() -> String { "".to_string() }
+fn default_ipv6_prefix_a() -> String { "::/0".to_string() }
+fn default_ipv6_prefix_b() -> String { "::/0".to_string() }
 
 #[derive(Debug, Deserialize, Default)]
 pub struct VirtualCustomerConfig {

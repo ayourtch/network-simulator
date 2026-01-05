@@ -54,6 +54,9 @@ real_tun_b = { name = "tunB", address = "10.0.0.1", netmask = "255.255.255.0" }
 # Ingress routers – adjust to match your topology
 tun_a_ingress = "R1"
 tun_b_ingress = "R2"
+# Optional IPv6 prefixes for injection direction (default ::/0 matches all IPv6 addresses)
+tun_a_ipv6_prefix = "::/0"
+tun_b_ipv6_prefix = "::/0"
 ```
 Adjust router IDs (`R1`, `R2`) to the ones defined in your topology.
 
