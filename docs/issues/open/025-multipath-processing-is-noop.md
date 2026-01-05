@@ -109,6 +109,10 @@ pub async fn process_packet_multi(
 
 fn select_next_hop_by_hash<'a>(packet: &PacketMeta, entries: &'a [RouteEntry]) -> &'a RouterId {
     use std::hash::{Hash, Hasher};
+    // Note: DefaultHasher is used here for simplicity. For production use,
+    // consider using a deterministic hasher like SipHash with a fixed seed
+    // to ensure consistent path selection across restarts. DefaultHasher's
+    // implementation may vary between Rust versions.
     use std::collections::hash_map::DefaultHasher;
     
     let mut hasher = DefaultHasher::new();

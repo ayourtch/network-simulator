@@ -74,21 +74,20 @@ pub struct RealTunConfig {
 pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box<dyn std::error::Error>> {
     // ... routing table computation ...
     
-    // Create TUN A
+    // Create TUN A - use into_raw_fd() or tun crate's async API (see Issue 030)
     let tun_a_name = &cfg.interfaces.real_tun_a.name;
     let tun_a_addr: Ipv4Addr = cfg.interfaces.real_tun_a.address.parse()?;
     let mut config_a = Configuration::default();
     config_a.name(tun_a_name).address(tun_a_addr).up();
-    let dev_a = TunDevice::new(&config_a)?;
-    let mut async_dev_a = tokio::fs::File::from_std(unsafe { std::fs::File::from_raw_fd(dev_a.as_raw_fd()) });
+    // Option 1: Use tun crate's async device directly
+    let mut async_dev_a = tun::create_as_async(&config_a)?;
     
     // Create TUN B
     let tun_b_name = &cfg.interfaces.real_tun_b.name;
     let tun_b_addr: Ipv4Addr = cfg.interfaces.real_tun_b.address.parse()?;
     let mut config_b = Configuration::default();
     config_b.name(tun_b_name).address(tun_b_addr).up();
-    let dev_b = TunDevice::new(&config_b)?;
-    let mut async_dev_b = tokio::fs::File::from_std(unsafe { std::fs::File::from_raw_fd(dev_b.as_raw_fd()) });
+    let mut async_dev_b = tun::create_as_async(&config_b)?;
     
     let mut buf_a = vec![0u8; cfg.simulation.mtu as usize];
     let mut buf_b = vec![0u8; cfg.simulation.mtu as usize];
