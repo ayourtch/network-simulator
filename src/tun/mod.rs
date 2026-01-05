@@ -14,7 +14,7 @@ use tokio::signal;
 
 use tun::platform::Device as TunDevice;
 use tun::{Configuration};
-use std::os::unix::io::{AsRawFd, FromRawFd};
+use std::os::unix::io::{FromRawFd};
 use tracing::{info, error, debug, warn};
 use std::net::Ipv4Addr;
 
@@ -187,9 +187,21 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
 // Helper to create async TUN device from config.
 fn create_async_tun(name: &str, addr_str: &str, netmask_str: &str) -> Result<tokio::fs::File, String> {
     let mut cfg = Configuration::default();
-    let addr: Ipv4Addr = addr_str.parse().unwrap_or(Ipv4Addr::new(10, 0, 0, 1));
-    let netmask: Ipv4Addr = netmask_str.parse().unwrap_or(Ipv4Addr::new(255, 255, 255, 0));
-    cfg.name(name).address(addr).netmask(netmask).up();
+    // Parse address, supporting both IPv4 and IPv6.
+    let ip_addr = addr_str.parse::<std::net::IpAddr>()
+        .map_err(|_| format!("Invalid IP address for TUN {}: '{}'", name, addr_str))?;
+    match ip_addr {
+        std::net::IpAddr::V4(v4) => {
+            // IPv4: use provided netmask (fallback defaults).
+            let netmask = netmask_str.parse::<Ipv4Addr>()
+                .unwrap_or(Ipv4Addr::new(255, 255, 255, 0));
+            cfg.name(name).address(v4).netmask(netmask).up();
+        },
+        std::net::IpAddr::V6(v6) => {
+            // IPv6: netmask handling is currently a placeholder – we ignore netmask_str.
+            cfg.name(name).address(std::net::IpAddr::V6(v6)).up();
+        },
+    }
     use std::os::unix::io::IntoRawFd;
     let dev = TunDevice::new(&cfg)
         .map_err(|e| format!("Failed to create TUN device {}: {}", name, e))?;
@@ -197,6 +209,7 @@ fn create_async_tun(name: &str, addr_str: &str, netmask_str: &str) -> Result<tok
     let std_file = unsafe { std::fs::File::from_raw_fd(raw_fd) };
     Ok(tokio::fs::File::from_std(std_file))
 }
+
 
 let async_dev_a = create_async_tun(&cfg.interfaces.real_tun_a.name, &cfg.interfaces.real_tun_a.address, &cfg.interfaces.real_tun_a.netmask)?;
 let async_dev_b = create_async_tun(&cfg.interfaces.real_tun_b.name, &cfg.interfaces.real_tun_b.address, &cfg.interfaces.real_tun_b.netmask)?;
@@ -272,6 +285,16 @@ loop {
         }
         _ = &mut shutdown_signal => {
             info!("Shutdown signal received, exiting dual‑TUN loop");
+            // Bring down the TUN interfaces to avoid leaving them up after exit.
+            #[cfg(target_os = "linux")] {
+                use std::process::Command;
+                let _ = Command::new("ip")
+                    .args(["link", "set", "dev", &cfg.interfaces.real_tun_a.name, "down"])
+                    .status();
+                let _ = Command::new("ip")
+                    .args(["link", "set", "dev", &cfg.interfaces.real_tun_b.name, "down"])
+                    .status();
+            }
             break;
         }
     }

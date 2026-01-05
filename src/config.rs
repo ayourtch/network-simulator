@@ -74,6 +74,7 @@ impl SimulatorConfig {
         }
         // Validate existence of packet file(s) if provided.
         use std::path::Path;
+use std::net::Ipv4Addr;
         if let Some(ref path) = self.packet_file {
             if !Path::new(path).exists() {
                 return Err(format!("packet_file '{}' does not exist", path));
@@ -128,17 +129,32 @@ impl SimulatorConfig {
         // Also ensure ingress IDs are valid format
         RouterId(self.tun_ingress.tun_a_ingress.clone()).validate()?;
         RouterId(self.tun_ingress.tun_b_ingress.clone()).validate()?;
-        // Validate real TUN IPv4 address and netmask fields
+        // Validate real TUN address and netmask fields (support both IPv4 and IPv6)
         let rt_a = &self.interfaces.real_tun_a;
         let rt_b = &self.interfaces.real_tun_b;
-        for (label, cfg) in &["real_tun_a", rt_a], &["real_tun_b", rt_b] {
-            // address
-            if cfg.address.parse::<Ipv4Addr>().is_err() {
-                return Err(format!("Invalid IPv4 address for {}.address: '{}'", label, cfg.address));
-            }
-            // netmask
-            if cfg.netmask.parse::<Ipv4Addr>().is_err() {
-                return Err(format!("Invalid IPv4 netmask for {}.netmask: '{}'", label, cfg.netmask));
+        for (label, cfg) in &[ ("real_tun_a", rt_a), ("real_tun_b", rt_b) ] {
+            // Parse address as generic IpAddr
+            let ip_addr = cfg.address.parse::<std::net::IpAddr>()
+                .map_err(|_| format!("Invalid IP address for {}.address: '{}'", label, cfg.address))?;
+            match ip_addr {
+                std::net::IpAddr::V4(_v4) => {
+                    // IPv4: validate netmask as IPv4 address
+                    if cfg.netmask.parse::<Ipv4Addr>().is_err() {
+                        return Err(format!("Invalid IPv4 netmask for {}.netmask: '{}'", label, cfg.netmask));
+                    }
+                },
+                std::net::IpAddr::V6(_v6) => {
+                    // IPv6: treat netmask as prefix length (0-128). If empty, default to 64.
+                    if cfg.netmask.is_empty() {
+                        // empty netmask is acceptable, will use default /64 in tun creation
+                    } else {
+                        let prefix: u8 = cfg.netmask.parse::<u8>()
+                            .map_err(|_| format!("Invalid IPv6 netmask/prefix for {}.netmask: '{}' (expected 0-128)", label, cfg.netmask))?;
+                        if prefix > 128 {
+                            return Err(format!("IPv6 netmask/prefix out of range for {}.netmask: '{}' (max 128)", label, cfg.netmask));
+                        }
+                    }
+                },
             }
         }
         Ok(())
