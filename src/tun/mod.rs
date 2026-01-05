@@ -5,7 +5,7 @@ use crate::topology::Fabric;
 use crate::routing::{compute_routing, compute_multi_path_routing, Destination};
 use crate::processor::{process_packet, process_packet_multi};
 use crate::topology::router::RouterId;
-use crate::packet::parse;
+use crate::packet::{calculate_ipv4_checksum, PacketMeta, parse};
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::net::Ipv4Addr;
@@ -35,7 +35,6 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
     } else {
         std::collections::HashMap::new()
     };
-    // Helper closure for CIDR containment checks
     let ip_in_prefix = |ip: &std::net::IpAddr, prefix: &str| -> bool {
         if prefix.is_empty() { return false; }
         match prefix.parse::<IpNet>() {
@@ -43,8 +42,66 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
             Err(_) => false,
         }
     };
-    // If a packet file is provided, process each line as a packet.
-    if let Some(ref path) = cfg.packet_file {
+
+
+    // Virtual customer packet generation
+    if let Some(vc) = &cfg.virtual_customer {
+        if let (Some(src_str), Some(dst_str)) = (&vc.src_ip, &vc.dst_ip) {
+            if let (Ok(src_ip), Ok(dst_ip)) = (
+                src_str.parse::<std::net::Ipv4Addr>(),
+                dst_str.parse::<std::net::Ipv4Addr>(),
+            ) {
+                let mut raw = vec![0u8; 20];
+                raw[0] = 0x45;
+                raw[1] = 0;
+                raw[2] = 0; raw[3] = 20;
+                raw[4] = 0; raw[5] = 0;
+                raw[6] = 0; raw[7] = 0;
+                raw[8] = 64;
+                raw[9] = vc.protocol.unwrap_or(6);
+                raw[10] = 0; raw[11] = 0;
+                raw[12..16].copy_from_slice(&src_ip.octets());
+                raw[16..20].copy_from_slice(&dst_ip.octets());
+                let checksum = calculate_ipv4_checksum(&raw);
+                raw[10] = (checksum >> 8) as u8;
+                raw[11] = (checksum & 0xFF) as u8;
+                let packet = PacketMeta {
+                    src_ip: std::net::IpAddr::V4(src_ip),
+                    dst_ip: std::net::IpAddr::V4(dst_ip),
+                    src_port: 0,
+                    dst_port: 0,
+                    protocol: raw[9],
+                    ttl: 64,
+                    raw,
+                };
+                let (ingress, destination) = if let Some(ref inject) = cfg.packet_inject_tun {
+                    match inject.as_str() {
+                        "tun_a" => (ingress_a.clone(), Destination::TunB),
+                        "tun_b" => (ingress_b.clone(), Destination::TunA),
+                        _ => (ingress_a.clone(), Destination::TunB),
+                    }
+                } else {
+                    if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_a_prefix) {
+                        (ingress_a.clone(), Destination::TunB)
+                    } else if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_b_prefix) {
+                        (ingress_b.clone(), Destination::TunA)
+                    } else {
+                        (ingress_a.clone(), Destination::TunB)
+                    }
+                };
+                debug!("Processing virtual customer packet at ingress {}", ingress.0);
+                if cfg.enable_multipath {
+                    process_packet_multi(fabric, &multipath_tables, ingress, packet, destination).await;
+                } else {
+                    process_packet(fabric, &routing_tables, ingress, packet, destination).await;
+                }
+            } else {
+                warn!("Invalid IPs in virtual_customer: src='{}', dst='{}'", src_str, dst_str);
+            }
+        } else {
+            warn!("virtual_customer missing src_ip or dst_ip");
+        }
+    }    if let Some(ref path) = cfg.packet_file {
         info!("Reading mock packets from {}", path);
         let file = File::open(path)?;
         let reader = BufReader::new(file);
@@ -80,44 +137,45 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
                 match inject.as_str() {
                     "tun_a" => (ingress_a.clone(), Destination::TunB),
                     "tun_b" => (ingress_b.clone(), Destination::TunA),
-                    // CIDR based injection direction detection
-if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_a_prefix) {
-    (ingress_a.clone(), Destination::TunB)
-} else if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_b_prefix) {
-    (ingress_b.clone(), Destination::TunA)
-} else if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_a_ipv6_prefix) {
-    (ingress_a.clone(), Destination::TunB)
-} else if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_b_ipv6_prefix) {
-    (ingress_b.clone(), Destination::TunA)
-} else {
-    // Default fallback to original heuristic (10.)
-    if packet.src_ip.to_string().starts_with("10.") {
-        (ingress_a.clone(), Destination::TunB)
-    } else {
-        (ingress_b.clone(), Destination::TunA)
-    }
-}
+                    _ => {
+                        // CIDR based injection direction detection
+                        if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_a_prefix) {
+                            (ingress_a.clone(), Destination::TunB)
+                        } else if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_b_prefix) {
+                            (ingress_b.clone(), Destination::TunA)
+                        } else if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_a_ipv6_prefix) {
+                            (ingress_a.clone(), Destination::TunB)
+                        } else if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_b_ipv6_prefix) {
+                            (ingress_b.clone(), Destination::TunA)
+                        } else {
+                            // Default fallback to original heuristic (10.)
+                            if packet.src_ip.to_string().starts_with("10.") {
+                                (ingress_a.clone(), Destination::TunB)
+                            } else {
+                                (ingress_b.clone(), Destination::TunA)
+                            }
+                        }
+                    }
                 }
             } else {
                 // CIDR based injection direction detection
-if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_a_prefix) {
-    (ingress_a.clone(), Destination::TunB)
-} else if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_b_prefix) {
-    (ingress_b.clone(), Destination::TunA)
-} else if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_a_ipv6_prefix) {
-    (ingress_a.clone(), Destination::TunB)
-} else if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_b_ipv6_prefix) {
-    (ingress_b.clone(), Destination::TunA)
-} else {
-    // Default fallback to original heuristic (10.)
-    if packet.src_ip.to_string().starts_with("10.") {
-        (ingress_a.clone(), Destination::TunB)
-    } else {
-        (ingress_b.clone(), Destination::TunA)
-    }
-}
-            }
-            ;
+                if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_a_prefix) {
+                    (ingress_a.clone(), Destination::TunB)
+                } else if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_b_prefix) {
+                    (ingress_b.clone(), Destination::TunA)
+                } else if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_a_ipv6_prefix) {
+                    (ingress_a.clone(), Destination::TunB)
+                } else if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_b_ipv6_prefix) {
+                    (ingress_b.clone(), Destination::TunA)
+                } else {
+                    // Default fallback to original heuristic (10.)
+                    if packet.src_ip.to_string().starts_with("10.") {
+                        (ingress_a.clone(), Destination::TunB)
+                    } else {
+                        (ingress_b.clone(), Destination::TunA)
+                    }
+                }
+            };
             debug!("Processing mock packet {} at ingress {}", idx + 1, ingress.0);
             let processed = if cfg.enable_multipath {
                 process_packet_multi(fabric, &multipath_tables, ingress, packet, destination).await
@@ -169,48 +227,46 @@ if ip_in_prefix(&packet.src_ip, &cfg.tun_ingress.tun_a_prefix) {
                         "tun_a" => (ingress_a.clone(), Destination::TunB),
                         "tun_b" => (ingress_b.clone(), Destination::TunA),
                         _ => {
-                            // Use configurable prefixes when injection direction is ambiguous.
-                            // Use CIDR based detection for ambiguous injection direction in multi‑file handling
-let src_ip = &packet.src_ip;
-if ip_in_prefix(src_ip, &cfg.tun_ingress.tun_a_prefix) {
-    (ingress_a.clone(), Destination::TunB)
-} else if ip_in_prefix(src_ip, &cfg.tun_ingress.tun_b_prefix) {
-    (ingress_b.clone(), Destination::TunA)
-} else if ip_in_prefix(src_ip, &cfg.tun_ingress.tun_a_ipv6_prefix) {
-    (ingress_a.clone(), Destination::TunB)
-} else if ip_in_prefix(src_ip, &cfg.tun_ingress.tun_b_ipv6_prefix) {
-    (ingress_b.clone(), Destination::TunA)
-} else {
-    // Default fallback to original heuristic (10.)
-    if src_ip.to_string().starts_with("10.") {
-        (ingress_a.clone(), Destination::TunB)
-    } else {
-        (ingress_b.clone(), Destination::TunA)
-    }
-}
+                            // CIDR based detection for ambiguous injection direction in multi‑file handling
+                            let src_ip = &packet.src_ip;
+                            if ip_in_prefix(src_ip, &cfg.tun_ingress.tun_a_prefix) {
+                                (ingress_a.clone(), Destination::TunB)
+                            } else if ip_in_prefix(src_ip, &cfg.tun_ingress.tun_b_prefix) {
+                                (ingress_b.clone(), Destination::TunA)
+                            } else if ip_in_prefix(src_ip, &cfg.tun_ingress.tun_a_ipv6_prefix) {
+                                (ingress_a.clone(), Destination::TunB)
+                            } else if ip_in_prefix(src_ip, &cfg.tun_ingress.tun_b_ipv6_prefix) {
+                                (ingress_b.clone(), Destination::TunA)
+                            } else {
+                                // Default fallback to original heuristic (10.)
+                                if src_ip.to_string().starts_with("10.") {
+                                    (ingress_a.clone(), Destination::TunB)
+                                } else {
+                                    (ingress_b.clone(), Destination::TunA)
+                                }
+                            }
                         }
                     }
                 } else {
                     // No explicit injection, use CIDR prefixes similar to single‑file handling.
-let src_ip = &packet.src_ip;
-if ip_in_prefix(src_ip, &cfg.tun_ingress.tun_a_prefix) {
-    (ingress_a.clone(), Destination::TunB)
-} else if ip_in_prefix(src_ip, &cfg.tun_ingress.tun_b_prefix) {
-    (ingress_b.clone(), Destination::TunA)
-} else if ip_in_prefix(src_ip, &cfg.tun_ingress.tun_a_ipv6_prefix) {
-    (ingress_a.clone(), Destination::TunB)
-} else if ip_in_prefix(src_ip, &cfg.tun_ingress.tun_b_ipv6_prefix) {
-    (ingress_b.clone(), Destination::TunA)
-} else {
-    // Default fallback to original heuristic (10.)
-    if src_ip.to_string().starts_with("10.") {
-        (ingress_a.clone(), Destination::TunB)
-    } else {
-        (ingress_b.clone(), Destination::TunA)
-    }
-};
+                    let src_ip = &packet.src_ip;
+                    if ip_in_prefix(src_ip, &cfg.tun_ingress.tun_a_prefix) {
+                        (ingress_a.clone(), Destination::TunB)
+                    } else if ip_in_prefix(src_ip, &cfg.tun_ingress.tun_b_prefix) {
+                        (ingress_b.clone(), Destination::TunA)
+                    } else if ip_in_prefix(src_ip, &cfg.tun_ingress.tun_a_ipv6_prefix) {
+                        (ingress_a.clone(), Destination::TunB)
+                    } else if ip_in_prefix(src_ip, &cfg.tun_ingress.tun_b_ipv6_prefix) {
+                        (ingress_b.clone(), Destination::TunA)
+                    } else {
+                        // Default fallback to original heuristic (10.)
+                        if src_ip.to_string().starts_with("10.") {
+                            (ingress_a.clone(), Destination::TunB)
+                        } else {
+                            (ingress_b.clone(), Destination::TunA)
+                        }
+                    }
                 };
-                debug!("Processing mock packet {} at ingress {}", idx + 1, ingress.0);
                 let processed = if cfg.enable_multipath {
                     process_packet_multi(fabric, &multipath_tables, ingress, packet, destination).await
                 } else {
