@@ -17,6 +17,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # packet parsing library
 pnet = "0.33"
+ipnet = "2.8"
 clap = { version = "4", features = ["derive"] }
 hex = "0.4"
 # TUN/TAP interface support
@@ -28,3 +29,4 @@ thiserror = "1.0"
 assert_cmd = "2.0"
 predicates = "3.0"
 tempfile = "3.3"
+

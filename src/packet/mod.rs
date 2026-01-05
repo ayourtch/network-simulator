@@ -132,12 +132,12 @@ pub fn parse(data: &[u8]) -> Result<PacketMeta, &'static str> {
             raw: data.to_vec(),
         });
     } else if version == 6 {
-        // IPv6 parsing
+        // IPv6 parsing with optional Hop-by-Hop extension header handling
         if data.len() < 40 {
             return Err("packet too short for IPv6 header");
         }
         // Next Header field at offset 6, Hop Limit at offset 7
-        let next_header = data[6];
+        let mut next_header = data[6];
         let hop_limit = data[7];
         let src_ip = Ipv6Addr::new(
             u16::from_be_bytes([data[8], data[9]]),
@@ -159,8 +159,22 @@ pub fn parse(data: &[u8]) -> Result<PacketMeta, &'static str> {
             u16::from_be_bytes([data[36], data[37]]),
             u16::from_be_bytes([data[38], data[39]]),
         );
-        // Extract ports for TCP/UDP if possible (offset after IPv6 header)
-        let transport_offset = 40;
+        // Determine transport offset, handling possible Hop-by-Hop extension header (Next Header == 0).
+        let mut transport_offset = 40usize;
+        if next_header == 0 {
+            // Need at least two bytes for Hop-by-Hop header.
+            if data.len() < transport_offset + 2 {
+                return Err("packet too short for Hop-by-Hop header");
+            }
+            // The real next header is the first byte of the Hop-by-Hop header.
+            let real_next = data[transport_offset];
+            // Header Extension Length: length of the header in 8-byte units, not counting the first 8 bytes.
+            let hdr_len = data[transport_offset + 1] as usize;
+            let ext_len = (hdr_len + 1) * 8; // total size of the Hop-by-Hop header.
+            next_header = real_next;
+            transport_offset += ext_len;
+        }
+        // Extract ports for TCP/UDP if possible (offset after IPv6 (and any Hop-by-Hop) header)
         let (src_port, dst_port) = if (next_header == 6 || next_header == 17) && data.len() >= transport_offset + 4 {
             let sp = u16::from_be_bytes([data[transport_offset], data[transport_offset + 1]]);
             let dp = u16::from_be_bytes([data[transport_offset + 2], data[transport_offset + 3]]);
