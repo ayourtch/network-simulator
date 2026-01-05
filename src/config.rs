@@ -165,8 +165,10 @@ pub struct InterfacesConfig {
     pub tun_a: String,
     #[serde(default = "default_tun_b")]
     pub tun_b: String,
-    #[serde(default = "default_real_tun")]
-    pub real_tun: RealTunConfig,
+    #[serde(default = "default_real_tun_a")]
+    pub real_tun_a: RealTunConfig,
+    #[serde(default = "default_real_tun_b")]
+    pub real_tun_b: RealTunConfig,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -185,7 +187,9 @@ fn default_tun_b() -> String { "tunB".to_string() }
 fn default_real_tun_name() -> String { "tun0".to_string() }
 fn default_real_tun_addr() -> String { "10.0.0.1".to_string() }
 fn default_real_tun_netmask() -> String { "255.255.255.0".to_string() }
-fn default_real_tun() -> RealTunConfig { RealTunConfig::default() }
+fn default_real_tun_a() -> RealTunConfig { RealTunConfig { name: "tun0a".to_string(), address: "10.0.0.1".to_string(), netmask: "255.255.255.0".to_string() } }
+
+fn default_real_tun_b() -> RealTunConfig { RealTunConfig { name: "tun0b".to_string(), address: "10.0.1.1".to_string(), netmask: "255.255.255.0".to_string() } }
 
 #[derive(Debug, Deserialize, Default)]
 pub struct TunIngressConfig {
@@ -193,10 +197,16 @@ pub struct TunIngressConfig {
     pub tun_a_ingress: String,
     #[serde(default = "default_ingress_b")]
     pub tun_b_ingress: String,
+    #[serde(default = "default_prefix_a")]
+    pub tun_a_prefix: String,
+    #[serde(default = "default_prefix_b")]
+    pub tun_b_prefix: String,
 }
 
 fn default_ingress_a() -> String { "Rx0y0".to_string() }
 fn default_ingress_b() -> String { "Rx5y5".to_string() }
+fn default_prefix_a() -> String { "10.".to_string() }
+fn default_prefix_b() -> String { "".to_string() }
 
 #[derive(Debug, Deserialize, Default)]
 pub struct TopologyConfig {

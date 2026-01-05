@@ -58,13 +58,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     cfg.enable_multipath = args.multipath;
     // Override real TUN config if CLI options provided
     if let Some(name) = args.tun_name {
-        cfg.interfaces.real_tun.name = name;
+        cfg.interfaces.real_tun_a.name = name;
     }
     if let Some(addr) = args.tun_address {
-        cfg.interfaces.real_tun.address = addr;
+        cfg.interfaces.real_tun_a.address = addr;
     }
     if let Some(mask) = args.tun_netmask {
-        cfg.interfaces.real_tun.netmask = mask;
+        cfg.interfaces.real_tun_a.netmask = mask;
     }
     // Override packet file if provided
     if let Some(ref pf) = args.packet_file {

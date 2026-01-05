@@ -22,7 +22,7 @@ fn test_tun_mock_packet_processing() {
     let cfg = SimulatorConfig {
         simulation: Default::default(),
         interfaces: Default::default(),
-        tun_ingress: TunIngressConfig { tun_a_ingress: "Rx0y0".to_string(), tun_b_ingress: "Rx0y1".to_string() },
+        tun_ingress: TunIngressConfig { tun_a_ingress: "Rx0y0".to_string(), tun_b_ingress: "Rx0y1".to_string(), tun_a_prefix: "".to_string(), tun_b_prefix: "".to_string() },
         topology: TopologyConfig {
             routers: {
                 let mut map = HashMap::new();

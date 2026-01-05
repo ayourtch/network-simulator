@@ -81,17 +81,23 @@ Choose the method that best fits your workflow.
 
 ## Quick Start
 
-Follow these three steps to get up and running quickly:
+Follow these steps to get up and running quickly:
 
 1. Clone the repository.
 2. Build the project.
-3. Run the simulator.
+3. Run the simulator in mock packet mode (recommended for easy testing) or real TUN mode (single interface).
 
+**Mock packet mode:**
 ```bash
 git clone https://github.com/yourusername/network-simulator.git
 cd network-simulator
 cargo build --release
-./target/release/network-simulator --config config.toml --packet-file path/to/packet_hex.txt -vv --multipath
+./target/release/network-simulator --config config.toml --packet-file path/to/packet_hex.txt -vv
+```
+
+**Real TUN mode (single interface):**
+```bash
+./target/release/network-simulator --config config.toml -vv
 ```
 
 ## Usage

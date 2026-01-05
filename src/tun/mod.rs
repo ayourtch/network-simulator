@@ -72,19 +72,39 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
                     "tun_a" => (ingress_a.clone(), Destination::TunB),
                     "tun_b" => (ingress_b.clone(), Destination::TunA),
                     _ => {
-                        // Fallback to IP based detection.
-                        if packet.src_ip.to_string().starts_with("10.") {
+                        // Fallback to IP based detection using configurable prefixes.
+                        let prefix_a = &cfg.tun_ingress.tun_a_prefix;
+                        let prefix_b = &cfg.tun_ingress.tun_b_prefix;
+                        if !prefix_a.is_empty() && packet.src_ip.to_string().starts_with(prefix_a) {
                             (ingress_a.clone(), Destination::TunB)
-                        } else {
+                        } else if !prefix_b.is_empty() && packet.src_ip.to_string().starts_with(prefix_b) {
                             (ingress_b.clone(), Destination::TunA)
+                        } else {
+                            // Default fallback to original heuristic (10.)
+                            if packet.src_ip.to_string().starts_with("10.") {
+                                (ingress_a.clone(), Destination::TunB)
+                            } else {
+                                (ingress_b.clone(), Destination::TunA)
+                            }
                         }
                     }
                 }
-            } else if packet.src_ip.to_string().starts_with("10.") {
-                (ingress_a.clone(), Destination::TunB)
             } else {
-                (ingress_b.clone(), Destination::TunA)
-            };
+                let prefix_a = &cfg.tun_ingress.tun_a_prefix;
+                let prefix_b = &cfg.tun_ingress.tun_b_prefix;
+                if !prefix_a.is_empty() && packet.src_ip.to_string().starts_with(prefix_a) {
+                    (ingress_a.clone(), Destination::TunB)
+                } else if !prefix_b.is_empty() && packet.src_ip.to_string().starts_with(prefix_b) {
+                    (ingress_b.clone(), Destination::TunA)
+                } else {
+                    if packet.src_ip.to_string().starts_with("10.") {
+                        (ingress_a.clone(), Destination::TunB)
+                    } else {
+                        (ingress_b.clone(), Destination::TunA)
+                    }
+                }
+            }
+            ;
             debug!("Processing mock packet {} at ingress {}", idx + 1, ingress.0);
             let processed = if cfg.enable_multipath {
                 process_packet_multi(fabric, &multipath_tables, ingress, packet, destination).await
@@ -161,63 +181,102 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
             }
         }
     } else {
-        // Open a TUN device using the first configured interface name.
-        let tun_name = &cfg.interfaces.real_tun.name;
-        info!("Opening real TUN device {}", tun_name);
-        let mut config = Configuration::default();
-        let addr: Ipv4Addr = cfg.interfaces.real_tun.address.parse().unwrap_or(Ipv4Addr::new(10,0,0,1));
-        let netmask: Ipv4Addr = cfg.interfaces.real_tun.netmask.parse().unwrap_or(Ipv4Addr::new(255,255,255,0));
-        config.name(tun_name).address(addr).netmask(netmask).up();
-        let dev = TunDevice::new(&config)
-            .map_err(|e| format!("Failed to create TUN device: {}", e))?;
-        let std_file = unsafe { std::fs::File::from_raw_fd(dev.as_raw_fd()) };
-        let mut async_dev = tokio::fs::File::from_std(std_file);
-        let mut buf = vec![0u8; cfg.simulation.mtu as usize];
-        // Graceful shutdown signal future.
-        let shutdown_signal = signal::ctrl_c();
-        // Pin the shutdown future for select! macro.
-        tokio::pin!(shutdown_signal);
-        loop {
-            select! {
-                read_res = async_dev.read(&mut buf) => {
-                    let n = match read_res {
-                        Ok(0) => break, // EOF
-                        Ok(n) => n,
-                        Err(e) => {
-                            error!("Error reading from TUN device: {}", e);
-                            break;
-                        }
-                    };
-                    let packet_bytes = &buf[..n];
-                    let packet = match parse(packet_bytes) {
-                        Ok(p) => p,
-                        Err(e) => {
-                            error!("Failed to parse packet from TUN: {}", e);
-                            continue;
-                        }
-                    };
-                    let (ingress, destination) = if packet.src_ip.to_string().starts_with("10.") {
-                        (ingress_a.clone(), Destination::TunB)
-                    } else {
-                        (ingress_b.clone(), Destination::TunA)
-                    };
-                    debug!("Processing packet from TUN on ingress {}", ingress.0);
-                    let processed_packet = if cfg.enable_multipath {
-                        process_packet_multi(fabric, &multipath_tables, ingress.clone(), packet, destination).await
-                    } else {
-                        process_packet(fabric, &routing_tables, ingress.clone(), packet, destination).await
-                    };
-                    if let Err(e) = async_dev.write_all(&processed_packet.raw).await {
-                        error!("Failed to write packet back to TUN device: {}", e);
-                        break;
-                    }
-                }
-                _ = &mut shutdown_signal => {
-                    info!("Shutdown signal received, exiting TUN loop");
+        // Open two real TUN devices (real_tun_a and real_tun_b).
+// Packets read from tun_a are considered ingress_a and sent out via tun_b, and vice versa.
+
+// Helper to create async TUN device from config.
+fn create_async_tun(name: &str, addr_str: &str, netmask_str: &str) -> Result<tokio::fs::File, String> {
+    let mut cfg = Configuration::default();
+    let addr: Ipv4Addr = addr_str.parse().unwrap_or(Ipv4Addr::new(10, 0, 0, 1));
+    let netmask: Ipv4Addr = netmask_str.parse().unwrap_or(Ipv4Addr::new(255, 255, 255, 0));
+    cfg.name(name).address(addr).netmask(netmask).up();
+    use std::os::unix::io::IntoRawFd;
+    let dev = TunDevice::new(&cfg)
+        .map_err(|e| format!("Failed to create TUN device {}: {}", name, e))?;
+    let raw_fd = dev.into_raw_fd();
+    let std_file = unsafe { std::fs::File::from_raw_fd(raw_fd) };
+    Ok(tokio::fs::File::from_std(std_file))
+}
+
+let async_dev_a = create_async_tun(&cfg.interfaces.real_tun_a.name, &cfg.interfaces.real_tun_a.address, &cfg.interfaces.real_tun_a.netmask)?;
+let async_dev_b = create_async_tun(&cfg.interfaces.real_tun_b.name, &cfg.interfaces.real_tun_b.address, &cfg.interfaces.real_tun_b.netmask)?;
+let mut async_dev_a = async_dev_a;
+let mut async_dev_b = async_dev_b;
+let mut buf_a = vec![0u8; cfg.simulation.mtu as usize];
+let mut buf_b = vec![0u8; cfg.simulation.mtu as usize];
+// Graceful shutdown signal future.
+let shutdown_signal = signal::ctrl_c();
+// Pin the shutdown future for select! macro.
+tokio::pin!(shutdown_signal);
+loop {
+    select! {
+        // Read from TUN A, forward to B.
+        read_res = async_dev_a.read(&mut buf_a) => {
+            let n = match read_res {
+                Ok(0) => break, // EOF
+                Ok(n) => n,
+                Err(e) => {
+                    error!("Error reading from TUN A: {}", e);
                     break;
                 }
+            };
+            let packet_bytes = &buf_a[..n];
+            let packet = match parse(packet_bytes) {
+                Ok(p) => p,
+                Err(e) => {
+                    error!("Failed to parse packet from TUN A: {}", e);
+                    continue;
+                }
+            };
+            let (ingress, destination) = (ingress_a.clone(), Destination::TunB);
+            debug!("Processing packet from TUN A on ingress {}", ingress.0);
+            let processed = if cfg.enable_multipath {
+                process_packet_multi(fabric, &multipath_tables, ingress.clone(), packet, destination).await
+            } else {
+                process_packet(fabric, &routing_tables, ingress.clone(), packet, destination).await
+            };
+            if let Err(e) = async_dev_b.write_all(&processed.raw).await {
+                error!("Failed to write packet to TUN B: {}", e);
+                break;
             }
         }
+        // Read from TUN B, forward to A.
+        read_res = async_dev_b.read(&mut buf_b) => {
+            let n = match read_res {
+                Ok(0) => break, // EOF
+                Ok(n) => n,
+                Err(e) => {
+                    error!("Error reading from TUN B: {}", e);
+                    break;
+                }
+            };
+            let packet_bytes = &buf_b[..n];
+            let packet = match parse(packet_bytes) {
+                Ok(p) => p,
+                Err(e) => {
+                    error!("Failed to parse packet from TUN B: {}", e);
+                    continue;
+                }
+            };
+            let (ingress, destination) = (ingress_b.clone(), Destination::TunA);
+            debug!("Processing packet from TUN B on ingress {}", ingress.0);
+            let processed = if cfg.enable_multipath {
+                process_packet_multi(fabric, &multipath_tables, ingress.clone(), packet, destination).await
+            } else {
+                process_packet(fabric, &routing_tables, ingress.clone(), packet, destination).await
+            };
+            if let Err(e) = async_dev_a.write_all(&processed.raw).await {
+                error!("Failed to write packet to TUN A: {}", e);
+                break;
+            }
+        }
+        _ = &mut shutdown_signal => {
+            info!("Shutdown signal received, exiting dual‑TUN loop");
+            break;
+        }
+    }
+}
+
     }
     Ok(())
 }

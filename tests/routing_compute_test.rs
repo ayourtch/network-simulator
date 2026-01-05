@@ -16,6 +16,8 @@ fn test_compute_routing_tables_counts() {
         tun_ingress: TunIngressConfig {
             tun_a_ingress: "Rx0y0".to_string(),
             tun_b_ingress: "Rx0y1".to_string(),
+            tun_a_prefix: "".to_string(),
+            tun_b_prefix: "".to_string(),
         },
         topology: TopologyConfig {
             routers: {
@@ -61,6 +63,8 @@ fn test_compute_multipath_tables_when_enabled() {
         tun_ingress: TunIngressConfig {
             tun_a_ingress: "Rx0y0".to_string(),
             tun_b_ingress: "Rx0y1".to_string(),
+            tun_a_prefix: "".to_string(),
+            tun_b_prefix: "".to_string(),
         },
         topology: TopologyConfig {
             routers: {
