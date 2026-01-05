@@ -2,7 +2,7 @@
 
 use crate::routing::{Destination, RoutingTable};
 use crate::routing::multipath::MultiPathTable;
-use crate::topology::{Fabric, RouterId};
+use crate::topology::{Fabric, RouterId, Link};
 use crate::packet::{self, PacketMeta};
 
 use crate::simulation::{simulate_link, SimulationError};
@@ -11,15 +11,12 @@ use crate::icmp;
 use tracing::{debug, error};
 use std::collections::HashMap;
 
-/// Helper to determine if a packet is IPv6.
+// Helper to determine if a packet is IPv6.
 fn is_ipv6(packet: &PacketMeta) -> bool {
     matches!(packet.src_ip, std::net::IpAddr::V6(_))
 }
 
-/// Returns the opposite destination (used for ICMP replies).
-/// Returns the opposite destination (used for ICMP replies).
-/// This function swaps the direction of traffic when generating an ICMP error response,
-/// so that the reply is sent back towards the original packet source.
+// Returns the opposite destination (used for ICMP replies).
 fn opposite_destination(dest: Destination) -> Destination {
     match dest {
         Destination::TunA => Destination::TunB,
@@ -27,8 +24,7 @@ fn opposite_destination(dest: Destination) -> Destination {
     }
 }
 
-/// Process a packet using single‑path routing tables.
-/// Returns the packet after processing (may be modified, e.g., TTL decrement).
+// Process a packet using single‑path routing tables.
 pub async fn process_packet(
     fabric: &mut Fabric,
     tables: &HashMap<RouterId, RoutingTable>,
@@ -75,8 +71,6 @@ pub async fn process_packet(
                 break;
             }
         }
-        // TTL decrement moved after destination detection.
-
         // Get routing table for current router.
         let table = match tables.get(&ingress) {
             Some(t) => t,
@@ -106,19 +100,16 @@ pub async fn process_packet(
             Destination::TunA => &table.tun_a.next_hop,
             Destination::TunB => &table.tun_b.next_hop,
         };
-
         // Destination detection: if next hop is the current router, packet has arrived at its destination.
         if next_hop == &ingress {
             debug!("Packet reached destination router {}", ingress.0);
             break;
         }
-
         // Decrement TTL / Hop Limit after confirming we are not at destination.
         if let Err(e) = packet.decrement_ttl() {
             error!("Failed to decrement TTL: {}", e);
             break;
         }
-
         // Select egress link using forwarding engine (supports load‑balancing).
         let incident_links = fabric.incident_links(&ingress);
         let link_opt = select_egress_link(&ingress, &packet, &incident_links, tables, destination);
@@ -184,8 +175,7 @@ pub async fn process_packet(
     packet
 }
 
-/// Process a packet using multipath routing tables.
-/// Currently a placeholder that reuses single‑path logic.
+// Process a packet using multipath routing tables.
 pub async fn process_packet_multi(
     fabric: &mut Fabric,
     tables: &HashMap<RouterId, MultiPathTable>,
@@ -238,7 +228,24 @@ pub async fn process_packet_multi(
             Some(t) => t,
             None => {
                 debug!("No multipath table for router {}", ingress.0);
-                break;
+                // Generate ICMP Destination Unreachable similar to single‑path handling.
+                let icmp_bytes = if is_ipv6(&packet) {
+                    icmp::generate_icmpv6_error(&packet, 3, 0)
+                } else {
+                    icmp::generate_icmp_error(&packet, 3, 0)
+                };
+                if let Some(node_idx) = fabric.router_index.get(&ingress) {
+                    if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
+                        router.increment_icmp();
+                    }
+                }
+                if let Ok(icmp_packet) = packet::parse(&icmp_bytes) {
+                    packet = icmp_packet;
+                    destination = opposite_destination(destination);
+                    continue;
+                } else {
+                    break;
+                }
             }
         };
         // Select appropriate next‑hop list based on destination.
@@ -339,7 +346,7 @@ pub async fn process_packet_multi(
     packet
 }
 
-/// Select a next‑hop router from a list of equal‑cost entries using a hash of the packet's 5‑tuple.
+// Select a next‑hop router from a list of equal‑cost entries using a hash of the packet's 5‑tuple.
 fn select_next_hop_by_hash<'a>(packet: &PacketMeta, entries: &'a [crate::routing::RouteEntry]) -> &'a RouterId {
     use std::hash::{Hash, Hasher};
     use std::collections::hash_map::DefaultHasher;

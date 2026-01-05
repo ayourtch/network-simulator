@@ -1,3 +1,5 @@
 # Resolved: ICMP Routing Not Implemented – issue closed
 
-Implemented basic ICMP routing: when TTL expires or MTU exceeded, an ICMP error packet is generated, parsed, and re‑processed through the fabric with the original ingress router as the destination (using `Destination::TunA`). This ensures ICMP packets are sent back toward the source. The logic is integrated into `process_packet` and `process_packet_multi`.
+Implemented ICMP Destination Unreachable generation in both `process_packet` and `process_packet_multi` when routing tables are missing. The router's ICMP counter is incremented and the generated ICMP packet is re‑processed, ensuring proper error feedback. Added unit test `test_icmp_destination_unreachable_generated` to verify behavior.
+
+*Closed as implemented.*

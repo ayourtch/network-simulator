@@ -471,7 +471,12 @@ loop {
                 process_packet(fabric, &routing_tables, ingress.clone(), packet, destination).await
             };
             if let Err(e) = async_dev_b.write_all(&processed.raw).await {
-                error!("Failed to write packet to TUN B: {}", e);
+                let err_msg = e.to_string();
+                if err_msg.contains("seek on unseekable file") {
+                    warn!("Write to TUN B failed (unseekable), likely due to mock mode; ignoring.");
+                } else {
+                    error!("Failed to write packet to TUN B: {}", e);
+                }
                 break;
             }
         }
