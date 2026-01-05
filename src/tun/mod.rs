@@ -156,17 +156,33 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
                         "tun_a" => (ingress_a.clone(), Destination::TunB),
                         "tun_b" => (ingress_b.clone(), Destination::TunA),
                         _ => {
-                            if packet.src_ip.to_string().starts_with("10.") {
+                            // Use configurable prefixes when injection direction is ambiguous.
+                            let prefix_a = &cfg.tun_ingress.tun_a_prefix;
+                            let prefix_b = &cfg.tun_ingress.tun_b_prefix;
+                            if !prefix_a.is_empty() && packet.src_ip.to_string().starts_with(prefix_a) {
+                                (ingress_a.clone(), Destination::TunB)
+                            } else if !prefix_b.is_empty() && packet.src_ip.to_string().starts_with(prefix_b) {
+                                (ingress_b.clone(), Destination::TunA)
+                            } else if packet.src_ip.to_string().starts_with("10.") {
                                 (ingress_a.clone(), Destination::TunB)
                             } else {
                                 (ingress_b.clone(), Destination::TunA)
                             }
                         }
                     }
-                } else if packet.src_ip.to_string().starts_with("10.") {
-                    (ingress_a.clone(), Destination::TunB)
                 } else {
-                    (ingress_b.clone(), Destination::TunA)
+                    // No explicit injection, use prefixes similar to single‑file handling.
+                    let prefix_a = &cfg.tun_ingress.tun_a_prefix;
+                    let prefix_b = &cfg.tun_ingress.tun_b_prefix;
+                    if !prefix_a.is_empty() && packet.src_ip.to_string().starts_with(prefix_a) {
+                        (ingress_a.clone(), Destination::TunB)
+                    } else if !prefix_b.is_empty() && packet.src_ip.to_string().starts_with(prefix_b) {
+                        (ingress_b.clone(), Destination::TunA)
+                    } else if packet.src_ip.to_string().starts_with("10.") {
+                        (ingress_a.clone(), Destination::TunB)
+                    } else {
+                        (ingress_b.clone(), Destination::TunA)
+                    }
                 };
                 debug!("Processing mock packet {} at ingress {}", idx + 1, ingress.0);
                 let processed = if cfg.enable_multipath {
@@ -198,8 +214,22 @@ fn create_async_tun(name: &str, addr_str: &str, netmask_str: &str) -> Result<tok
             cfg.name(name).address(v4).netmask(netmask).up();
         },
         std::net::IpAddr::V6(v6) => {
-            // IPv6: netmask handling is currently a placeholder – we ignore netmask_str.
+            // IPv6: apply prefix length (netmask_str) if provided, default /64.
             cfg.name(name).address(std::net::IpAddr::V6(v6)).up();
+            // After interface is up, configure IPv6 address with prefix using system command (Linux).
+            // If netmask_str is empty, default to 64.
+            let prefix = if netmask_str.is_empty() {
+                64u8
+            } else {
+                netmask_str.parse::<u8>().map_err(|_| format!("Invalid IPv6 prefix '{}', expected 0-128", netmask_str))?
+            };
+            #[cfg(target_os = "linux")] {
+                use std::process::Command;
+                let addr_with_prefix = format!("{}/{}", addr_str, prefix);
+                let _ = Command::new("ip")
+                    .args(["-6", "addr", "add", &addr_with_prefix, "dev", name])
+                    .status();
+            }
         },
     }
     use std::os::unix::io::IntoRawFd;

@@ -1,3 +1,3 @@
 # Packet Loss Fact
 
-The processor now logs packet loss events and increments the router's `packets_lost` statistic, providing visibility into silent drops caused by simulated link loss.
+The processor increments the `packets_lost` counter in each router's statistics whenever a packet is dropped due to simulated link loss, providing accurate loss metrics for analysis.
