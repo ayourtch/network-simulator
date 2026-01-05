@@ -156,7 +156,9 @@ These correspond to the flags described in the **Usage** section.
 
 ## Examples
 
-See the `examples/README.md` for a quick start guide and sample configuration files.
+- `examples/README.md` – quick start guide and sample configurations.
+- `docs/example/dual_tun_host_setup.md` – step‑by‑step tutorial for setting up a Linux host behind the dual‑TUN simulator.
+
 
 ```bash
 ./target/release/network-simulator --config config.toml --packet-file path/to/packet_hex.txt -vv --multipath

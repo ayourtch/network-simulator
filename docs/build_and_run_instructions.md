@@ -40,16 +40,19 @@ cargo build --release
 The executable will be located at `target/release/network-simulator`.
 
 ## Preparing the TUN Device
-The simulator currently supports a **single** TUN interface (named via `interfaces.real_tun.name` in the configuration). It can be created manually (requires root) or the binary will attempt to create it if it does not exist.
+The simulator now supports **dual** TUN interfaces (`real_tun_a` and `real_tun_b`). Each can be created manually (requires root) or the binary will attempt to create them if they do not exist.
 
 ### Manual creation (recommended for debugging)
 ```bash
-sudo ip tuntap add dev tun0 mode tun
-sudo ip link set tun0 up
+sudo ip tuntap add dev tunA mode tun
+sudo ip link set tunA up
+sudo ip tuntap add dev tunB mode tun
+sudo ip link set tunB up
 ```
-Assign an IP address if you want to ping through it:
+Assign IP addresses if you want to ping through them:
 ```bash
-sudo ip addr add 10.0.0.1/24 dev tun0
+sudo ip addr add 10.0.0.1/24 dev tunA
+sudo ip addr add 10.0.0.2/24 dev tunB
 ```
 
 ### Automatic creation
