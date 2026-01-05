@@ -37,6 +37,9 @@ struct Args {
     /// Optional multiple mock packet files (overrides config)
     #[arg(long, action = clap::ArgAction::Append, help = "Additional packet files for mock TUNs")]
     packet_files: Option<Vec<String>>,
+    /// Print router statistics after simulation ends
+    #[arg(long, action = clap::ArgAction::SetTrue, help = "Print router statistics after simulation ends")]
+    stats: bool,
 }
 
 #[tokio::main]
@@ -80,9 +83,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(seed) = cfg.simulation.seed {
         network_simulator::simulation::init_rng(seed);
     }
-    if let Err(e) = network_simulator::run(cfg).await {
-        eprintln!("Error: {}", e);
-        process::exit(1);
+    // Run simulation and capture the fabric
+    let fabric = match network_simulator::run(cfg).await {
+        Ok(fab) => fab,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            process::exit(1);
+        }
+    };
+    // If --stats flag is set, print router statistics
+    if args.stats {
+        println!("Router statistics after simulation:");
+        for (router_id, stats) in fabric.get_statistics() {
+            println!("Router {}: recv={}, fwd={}, icmp={}, lost={}",
+                router_id.0,
+                stats.packets_received,
+                stats.packets_forwarded,
+                stats.icmp_generated,
+                stats.packets_lost);
+        }
     }
     Ok(())
 }

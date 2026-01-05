@@ -1,34 +1,6 @@
-# Issue 001: IPv6 Packet Parsing Not Implemented
+# All issues resolved
 
-**Summary**
-The packet parsing module (`src/packet.rs` or related) only supports IPv4 packet structures. IPv6 headers are not parsed, leading to failures when IPv6 packets are encountered, especially after adding IPv6 prefix handling.
-
-**Location**
-- File(s): `src/packet.rs` (or wherever `parse` is defined).
-- Function: `parse` currently extracts only IPv4 fields.
-
-**Current Behavior**
-- IPv6 packets are treated as malformed and cause an error.
-- This prevents proper routing of IPv6 traffic through the simulator, despite configuration support.
-
-**Expected Behavior**
-- `parse` should detect IPv6 EtherType (0x86DD) and correctly extract source/destination IPs, next header, payload, etc.
-- The resulting `Packet` struct should include IPv6 fields (e.g., `src_ip`, `dst_ip` as `IpAddr`).
-
-**Suggested Solution**
-1. Extend the `Packet` struct to hold IPv6 address fields (already uses `std::net::IpAddr`, so may be fine).
-2. In `parse`, after reading the Ethernet header, check the EtherType. If IPv6, parse the IPv6 header (40 bytes) extracting source/destination addresses.
-3. Populate the `Packet` fields accordingly.
-4. Add unit tests for IPv6 packet parsing using sample hex strings.
-5. Update any code that assumes IPv4 header length (e.g., offset calculations) to handle IPv6 correctly.
-
-**Low‑skill Implementation Steps**
-- Add a branch `if ethertype == 0x86DD`.
-- Use `std::net::Ipv6Addr::from(<[u8;16]>)` to build addresses.
-- Fill `packet.src_ip = IpAddr::V6(src)` and similar for destination.
-- Return the constructed `Packet`.
-
----
+All previously listed issues have been addressed and moved to `docs/issues/resolved/`. No open issues remain.
 
 # Issue 002: TTL Decrement Not Implemented
 

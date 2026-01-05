@@ -82,7 +82,24 @@ pub async fn process_packet(
             Some(t) => t,
             None => {
                 debug!("No routing table for router {}", ingress.0);
-                break;
+                // Generate ICMP Destination Unreachable (type 3 code 0)
+                let icmp_bytes = if is_ipv6(&packet) {
+                    icmp::generate_icmpv6_error(&packet, 3, 0)
+                } else {
+                    icmp::generate_icmp_error(&packet, 3, 0)
+                };
+                if let Some(node_idx) = fabric.router_index.get(&ingress) {
+                    if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
+                        router.increment_icmp();
+                    }
+                }
+                if let Ok(icmp_packet) = packet::parse(&icmp_bytes) {
+                    packet = icmp_packet;
+                    destination = opposite_destination(destination);
+                    continue;
+                } else {
+                    break;
+                }
             }
         };
         let next_hop = match destination {
@@ -233,62 +250,91 @@ pub async fn process_packet_multi(
             debug!("No multipath entries for router {}", ingress.0);
             break;
         }
-        // Choose a next hop using a hash of the packet 5‑tuple.
-        let next_hop_id = select_next_hop_by_hash(&packet, entries);
-        // Destination detection: if next hop is the current router, packet has arrived at its destination.
-        if next_hop_id == &ingress {
-            debug!("Packet reached destination router {}", ingress.0);
-            break;
+        // Determine candidate links that connect to any of the equal‑cost next hops.
+        let incident_links = fabric.incident_links(&ingress);
+        let mut candidate_links: Vec<&Link> = incident_links.iter()
+            .filter(|&&link| entries.iter().any(|e| e.next_hop == link.id.a || e.next_hop == link.id.b))
+            .cloned()
+            .collect();
+        if candidate_links.is_empty() {
+            // Fallback to any incident link.
+            candidate_links = incident_links;
         }
+        // Load‑balance among candidate links with load_balance enabled, using counters.
+        let lb_links: Vec<&&Link> = candidate_links.iter().filter(|&&l| l.cfg.load_balance).collect();
+        let chosen_link = if !lb_links.is_empty() {
+            use std::hash::{Hash, Hasher};
+            use std::collections::hash_map::DefaultHasher;
+            use std::sync::atomic::Ordering;
+            let mut hasher = DefaultHasher::new();
+            packet.src_ip.hash(&mut hasher);
+            packet.dst_ip.hash(&mut hasher);
+            packet.src_port.hash(&mut hasher);
+            packet.dst_port.hash(&mut hasher);
+            packet.protocol.hash(&mut hasher);
+            // Include sum of counters of load‑balanced links.
+            let total_counter: u64 = lb_links.iter()
+                .map(|l| l.counter.load(Ordering::Relaxed))
+                .sum();
+            total_counter.hash(&mut hasher);
+            let hash = hasher.finish();
+            let idx = (hash as usize) % lb_links.len();
+            *lb_links[idx]
+        } else {
+            // Default: pick first candidate link.
+            candidate_links[0]
+        };
+        // Determine the next hop router from the chosen link.
+        let next_hop = if chosen_link.id.a == ingress {
+            chosen_link.id.b.clone()
+        } else {
+            chosen_link.id.a.clone()
+        };
         // Simulate the link.
-        if let Some(link) = fabric.get_link(&ingress, next_hop_id) {
-            if let Err(e) = simulate_link(&link, &packet.raw).await {
-                match e {
-                    SimulationError::MtuExceeded { .. } => {
-                        let icmp_bytes = if is_ipv6(&packet) {
-                            icmp::generate_icmpv6_error(&packet, 2, 0)
-                        } else {
-                            icmp::generate_icmp_error(&packet, 3, 4)
-                        };
-                        if let Some(node_idx) = fabric.router_index.get(&ingress) {
-                            if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
-                                router.increment_icmp();
-                            }
+        if let Err(e) = simulate_link(chosen_link, &packet.raw).await {
+            match e {
+                SimulationError::MtuExceeded { .. } => {
+                    let icmp_bytes = if is_ipv6(&packet) {
+                        icmp::generate_icmpv6_error(&packet, 2, 0)
+                    } else {
+                        icmp::generate_icmp_error(&packet, 3, 4)
+                    };
+                    if let Some(node_idx) = fabric.router_index.get(&ingress) {
+                        if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
+                            router.increment_icmp();
                         }
-                        if let Ok(icmp_packet) = packet::parse(&icmp_bytes) {
-                            packet = icmp_packet;
-                            destination = opposite_destination(destination);
-                            continue;
-                        } else {
-                            return packet;
-                        }
-                    },
-                    SimulationError::PacketLost => {
-                        debug!("Packet lost on link between {} and {}", ingress.0, next_hop_id.0);
-                        if let Some(node_idx) = fabric.router_index.get(&ingress) {
-                            if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
-                                router.increment_lost();
-                            }
-                        }
-                        break;
-                    },
-                    _ => {
-                        break;
                     }
+                    if let Ok(icmp_packet) = packet::parse(&icmp_bytes) {
+                        packet = icmp_packet;
+                        destination = opposite_destination(destination);
+                        continue;
+                    } else {
+                        return packet;
+                    }
+                },
+                SimulationError::PacketLost => {
+                    debug!("Packet lost on link between {} and {}", ingress.0, next_hop.0);
+                    if let Some(node_idx) = fabric.router_index.get(&ingress) {
+                        if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
+                            router.increment_lost();
+                        }
+                    }
+                    break;
+                },
+                _ => {
+                    break;
                 }
             }
-            // Successful forwarding – increment counter.
+        } else {
+            // Successful forwarding – increment forwarded counter.
             if let Some(node_idx) = fabric.router_index.get(&ingress) {
                 if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
                     router.increment_forwarded();
                 }
             }
-        } else {
-            debug!("No link between {} and {}", ingress.0, next_hop_id.0);
-            break;
         }
         // Move to next router.
-        ingress = next_hop_id.clone();
+        ingress = next_hop.clone();
     }
     packet
 }

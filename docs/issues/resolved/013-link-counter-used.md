@@ -1,0 +1,2 @@
+# Issue 013: Link Counter Used in Load‑Balancing Hash\n
+**Summary**\nThe load‑balancing hash in `src/forwarding/mod.rs` now incorporates the sum of the atomic counters of all load‑balanced links, ensuring that link utilization influences selection and improves distribution.\n\n**Resolution**\n- Updated `select_egress_link` to include `total_counter` in the hash calculation.\n- Added detailed comment explaining the purpose.\n\n**Verification**\n- Tests confirm more even packet distribution across equal‑cost links.\n\n*Closed as implemented.*

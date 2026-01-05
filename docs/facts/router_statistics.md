@@ -6,4 +6,4 @@ The packet processor now updates router statistics on every packet event:
 - `increment_icmp` when an ICMP error is generated.
 - `increment_lost` when a packet is dropped due to simulated loss.
 
-These counters are accessible via `Fabric::get_statistics()` for monitoring and debugging.
+These counters are accessible via `Fabric::get_statistics()` for monitoring and debugging. The CLI now supports a `--stats` flag to print these statistics after the simulation finishes.

@@ -1,4 +1,4 @@
-# Issue 052: Periodic Virtual Customer Packet Generation Implemented
+
 
 **Summary**
 The virtual customer configuration `rate` field now drives periodic packet generation. The simulator emits packets at the configured packets‑per‑second using a `tokio::time::Interval` within the main event loop.

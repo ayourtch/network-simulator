@@ -1,37 +1,57 @@
-use network_simulator::{config::SimulatorConfig, topology::{Fabric, RouterId}, routing::{Destination, compute_routing}, processor::process_packet, packet::{self, PacketMeta}};
-use std::net::IpAddr;
+// tests/icmp_routing_test.rs
 
-#[tokio::test]
-async fn test_icmp_routing_back_to_source() {
-    // Build a simple config with two routers and a link with small MTU to force drop.
-    let mut cfg = SimulatorConfig::default();
-    cfg.topology.routers.insert("Rx0y0".to_string(), toml::Value::Table(Default::default()));
-    cfg.topology.routers.insert("Rx0y1".to_string(), toml::Value::Table(Default::default()));
-    let link_cfg = network_simulator::topology::link::LinkConfig { mtu: Some(100), delay_ms: 0, jitter_ms: 0, loss_percent: 0.0, load_balance: false };
-    cfg.topology.links.insert("Rx0y0_Rx0y1".to_string(), link_cfg);
-    // Build fabric
+use network_simulator::config::{SimulatorConfig, TunIngressConfig, TopologyConfig};
+use network_simulator::topology::{Fabric, router::Router, router::RouterId};
+use network_simulator::processor::{process_packet};
+use network_simulator::routing::{Destination, RoutingTable};
+use network_simulator::packet::{PacketMeta};
+use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr};
+use tokio::runtime::Runtime;
+
+#[test]
+fn test_icmp_destination_unreachable_generated() {
+    // Simple config with no routing entries.
+    let _cfg = SimulatorConfig {
+        simulation: Default::default(),
+        interfaces: Default::default(),
+        tun_ingress: TunIngressConfig::default(),
+        topology: TopologyConfig::default(),
+        enable_multipath: false,
+        packet_file: None,
+        packet_files: None,
+        packet_inject_tun: None,
+        packet_inject_tuns: None,
+        virtual_customer: None,
+    };
+
+    // Build minimal fabric with one router having a valid ID.
     let mut fabric = Fabric::new();
-    let r0 = network_simulator::topology::router::Router { id: RouterId("Rx0y0".to_string()), routing: Default::default(), stats: Default::default() };
-    let r1 = network_simulator::topology::router::Router { id: RouterId("Rx0y1".to_string()), routing: Default::default(), stats: Default::default() };
-    fabric.add_router(r0.clone());
-    fabric.add_router(r1.clone());
-    fabric.add_link(&r0.id, &r1.id, cfg.topology.links["Rx0y0_Rx0y1"].clone());
-    // Compute routing tables (both routers are ingress for respective TUNs)
-    let tables = compute_routing(&fabric, RouterId("Rx0y0".to_string()), RouterId("Rx0y1".to_string()));
-    // Create a large IPv6 packet (200 bytes) to exceed MTU.
-    let raw = vec![0u8; 200];
-    let packet = packet::parse(&raw).unwrap_or(PacketMeta {
-        src_ip: "2001:db8::1".parse().unwrap(),
-        dst_ip: "2001:db8::2".parse().unwrap(),
+    let router = Router { id: RouterId("Rx0y0".to_string()), routing: Default::default(), stats: Default::default() };
+    fabric.add_router(router);
+
+    // Empty routing table (no entry for destination).
+    let tables: HashMap<RouterId, RoutingTable> = HashMap::new();
+
+    // Create a simple IPv4 packet.
+    let packet = PacketMeta {
+        src_ip: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
+        dst_ip: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)),
         src_port: 0,
         dst_port: 0,
-        protocol: 6,
+        protocol: 6, // TCP
         ttl: 64,
-        raw,
+        raw: vec![0u8; 20],
+    };
+
+    let rt = Runtime::new().unwrap();
+    let processed = rt.block_on(async {
+        process_packet(&mut fabric, &tables, RouterId("Rx0y0".to_string()), packet, Destination::TunA).await
     });
-    // Process packet from ingress Rx0y0 towards TunB.
-    let result = process_packet(&mut fabric, &tables, RouterId("Rx0y0".to_string()), packet, Destination::TunB).await;
-    // The result should be an ICMP packet with src/dst swapped.
-    assert_eq!(result.src_ip, "2001:db8::2".parse::<IpAddr>().unwrap());
-    assert_eq!(result.dst_ip, "2001:db8::1".parse::<IpAddr>().unwrap());
+
+    // The processed packet should be an ICMP (protocol 1) indicating Destination Unreachable.
+    assert_eq!(processed.protocol, 1, "Expected ICMP protocol after routing failure");
+    // Router stats should show an ICMP generated.
+    let router_stats = fabric.get_router(&RouterId("Rx0y0".to_string())).unwrap().stats.clone();
+    assert!(router_stats.icmp_generated > 0, "ICMP counter should be incremented");
 }

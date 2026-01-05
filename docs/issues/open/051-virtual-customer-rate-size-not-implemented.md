@@ -1,4 +1,4 @@
-# Issue 051: Virtual Customer Rate and Size Implemented
+
 
 **Summary**
 The `VirtualCustomerConfig` now fully supports `size` and `rate`. Generated packets include the specified payload size, and packets are emitted periodically at the configured rate using a `tokio::time::Interval`. IPv4 and IPv6 packets are both handled.

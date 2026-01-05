@@ -78,7 +78,7 @@ pub fn compute_multipath_tables(cfg: &SimulatorConfig) -> HashMap<RouterId, rout
 
 /// Entry point called from `main.rs`. Parses the configuration, builds the fabric,
 /// computes routing tables and (for now) immediately shuts down.
-pub async fn run(cfg: SimulatorConfig) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run(cfg: SimulatorConfig) -> Result<Fabric, Box<dyn std::error::Error>> {
     // Build fabric (stub implementation for now)
     let mut fabric = Fabric::new();
     // Add routers from config
@@ -150,8 +150,8 @@ pub async fn run(cfg: SimulatorConfig) -> Result<(), Box<dyn std::error::Error>>
     if let Err(e) = tun::start(&cfg, &mut fabric).await {
         error!("Failed to start TUN handling: {}", e);
     }
-    // Print final statistics
+    // Print final statistics (always printed; CLI flag may control additional output)
     fabric.print_statistics();
 
-    Ok(())
+    Ok(fabric)
 }
