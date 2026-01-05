@@ -1,5 +1,7 @@
 # Dual TUN Host Setup Guide
 
+*Now supports both IPv4 and IPv6 configurations.*
+
 This guide shows how to run the network simulator with two **real** TUN interfaces attached to separate Linux network namespaces. It enables a host in each namespace to communicate through the simulated network topology.
 
 ## Prerequisites
