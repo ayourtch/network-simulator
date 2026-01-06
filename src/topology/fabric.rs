@@ -96,3 +96,10 @@ impl Fabric {
         self.link_index.insert(id, edge_idx);
     }
 }
+
+// Add Default implementation for Fabric to satisfy Clippy and simplify usage.
+impl Default for Fabric {
+    fn default() -> Self {
+        Self::new()
+    }
+}
