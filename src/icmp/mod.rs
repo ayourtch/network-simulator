@@ -179,7 +179,7 @@ pub fn generate_fragmentation_needed(original: &PacketMeta, mtu: u32) -> Vec<u8>
     packet.push(3); // Type
     packet.push(4); // Code
     packet.extend_from_slice(&[0, 0]); // Checksum placeholder
-    packet.extend_from_slice(&[0, 0]); // Unused
+                                       // Next‑Hop MTU field (2 bytes) as per RFC
     let mtu16 = (mtu as u16).to_be_bytes();
     packet.extend_from_slice(&mtu16);
     // Include original IP header + first 8 bytes of payload
