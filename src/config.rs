@@ -1,6 +1,8 @@
+#![allow(clippy::derivable_impls)]
 // src/config.rs
 
 /// Configuration for the network simulator. Includes a flag to enable multipath routing.
+
 
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
