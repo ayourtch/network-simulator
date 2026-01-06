@@ -128,11 +128,11 @@ pub async fn process_packet(
         };
         if let Err(e) = simulate_link(link, &packet.raw).await {
             match e {
-                SimulationError::MtuExceeded { .. } => {
+                SimulationError::MtuExceeded { mtu, .. } => {
                     let icmp_bytes = if is_ipv6(&packet) {
                         icmp::generate_icmpv6_error(&packet, 2, 0)
                     } else {
-                        icmp::generate_icmp_error(&packet, 3, 4)
+                        icmp::generate_fragmentation_needed(&packet, mtu)
                     };
                     if let Some(node_idx) = fabric.router_index.get(&ingress) {
                         if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
@@ -312,11 +312,11 @@ pub async fn process_packet_multi(
         // Simulate the link.
         if let Err(e) = simulate_link(chosen_link, &packet.raw).await {
             match e {
-                SimulationError::MtuExceeded { .. } => {
+                SimulationError::MtuExceeded { mtu, .. } => {
                     let icmp_bytes = if is_ipv6(&packet) {
                         icmp::generate_icmpv6_error(&packet, 2, 0)
                     } else {
-                        icmp::generate_icmp_error(&packet, 3, 4)
+                        icmp::generate_fragmentation_needed(&packet, mtu)
                     };
                     if let Some(node_idx) = fabric.router_index.get(&ingress) {
                         if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
