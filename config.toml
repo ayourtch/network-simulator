@@ -15,9 +15,17 @@ tun_a_ingress = "Rx0y0"
 tun_b_ingress = "Rx5y5"
 
 [topology.routers]
-# Example: two routers and a link between them
+# Example: Five routers in a row, with another shortcut link
 Rx0y0 = {}
+Rx1y0 = {}
+Rx2y0 = {}
+Rx3y0 = {}
 Rx5y5 = {}
 
 [topology.links]
-Rx0y0_Rx5y5 = { delay_ms = 10, jitter_ms = 800, loss_percent = 90, mtu = 1500 }
+Rx0y0_Rx1y0 = { delay_ms = 10, jitter_ms = 0, loss_percent = 0, mtu = 1500 }
+Rx1y0_Rx2y0 = { delay_ms = 10, jitter_ms = 0, loss_percent = 0, mtu = 1500 }
+Rx2y0_Rx3y0 = { delay_ms = 10, jitter_ms = 0, loss_percent = 0, mtu = 1500 }
+Rx3y0_Rx5y5 = { delay_ms = 10, jitter_ms = 0, loss_percent = 0, mtu = 1500 }
+# Shortcut link
+Rx1y0_Rx5y5 = { delay_ms = 10, jitter_ms = 0, loss_percent = 0, mtu = 1500 }
