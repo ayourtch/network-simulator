@@ -486,7 +486,7 @@ pub async fn start(
             // Use the `ip` command to assign the address to the TUN interface.
             // Use async command to avoid blocking the runtime.
             let status = Command::new("ip")
-                .args(&["-6", "addr", "add", &addr_with_prefix, "dev", name])
+                .args(["-6", "addr", "add", &addr_with_prefix, "dev", name])
                 .status()
                 .await;
             if let Err(e) = status {

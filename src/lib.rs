@@ -182,7 +182,7 @@ pub async fn run(cfg: SimulatorConfig) -> Result<Fabric, Box<dyn std::error::Err
     if let Err(e) = tun::start(&cfg, &mut fabric).await {
         error!("Failed to start TUN handling: {}", e);
     }
-    println!("Exiting");
+    info!("Exiting");
     // Print final statistics (always printed; CLI flag may control additional output)
     fabric.print_statistics();
 
