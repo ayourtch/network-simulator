@@ -1,0 +1,1 @@
+Problem: simulator exits immediately when "cargo run" is done - should it not be creating the two tun interfaces ?
