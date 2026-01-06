@@ -35,7 +35,7 @@ pub fn select_egress_link_multi<'a>(
         .collect();
     if candidates.is_empty() {
         // Fallback: all links if no specific next_hop matches.
-        candidates = links.iter().cloned().collect();
+        candidates = links.to_vec();
     }
     // Load balancing among links with load_balance enabled.
     let lb_links: Vec<&&Link> = candidates.iter().filter(|&&l| l.cfg.load_balance).collect();

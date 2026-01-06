@@ -31,7 +31,7 @@ pub fn select_egress_link<'a>(
 
     if candidates.is_empty() {
         // No direct link – fallback to all links for possible load‑balancing.
-        candidates = links.iter().cloned().collect();
+        candidates = links.to_vec();
     }
 
     // Load balancing among links with load_balance enabled.

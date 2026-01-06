@@ -18,8 +18,8 @@ fn icmpv6_checksum(src: Ipv6Addr, dst: Ipv6Addr, icmp: &[u8]) -> u16 {
     }
     // payload length
     let len = icmp.len() as u32;
-    sum += ((len >> 16) & 0xFFFF) as u32; // high 16 bits (should be zero)
-    sum += (len & 0xFFFF) as u32;
+    sum += (len >> 16) & 0xFFFF; // high 16 bits (should be zero)
+    sum += len & 0xFFFF;
     // three zero bytes + next header (58 for ICMPv6)
     sum += 58;
     // ICMP payload

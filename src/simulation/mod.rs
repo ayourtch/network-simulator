@@ -44,21 +44,26 @@ pub async fn simulate_link(link: &Link, packet: &[u8]) -> Result<(), SimulationE
         }
     }
 
-    // Simulate packet loss based on configured loss_percent (0.0 – 100.0).
-    let mut rng = GLOBAL_RNG.lock().unwrap();
-    if rng.gen_range(0.0..100.0) < link.cfg.loss_percent as f64 {
+    // Simulate packet loss and compute jitter without holding the global RNG lock across await points.
+    let (loss_occurred, jitter_val) = {
+        let mut rng = GLOBAL_RNG.lock().unwrap();
+        let loss = rng.gen_range(0.0..100.0) < link.cfg.loss_percent as f64;
+        let jitter = if link.cfg.jitter_ms > 0 {
+            // Generate jitter in the range [-jitter_ms, +jitter_ms]
+            let range = -(link.cfg.jitter_ms as i32)..=link.cfg.jitter_ms as i32;
+            rng.gen_range(range) // returns i32
+        } else {
+            0
+        };
+        (loss, jitter)
+    };
+    if loss_occurred {
         debug!("Packet dropped on link {:?} due to loss ({}%)", link.id, link.cfg.loss_percent);
         return Err(SimulationError::PacketLost);
     }
 
-    // Compute jitter as symmetric offset and total delay = base delay + jitter (can be negative).
-    let jitter = if link.cfg.jitter_ms > 0 {
-        // Generate jitter in the range [-jitter_ms, +jitter_ms]
-        let range = -(link.cfg.jitter_ms as i32)..=link.cfg.jitter_ms as i32;
-        rng.gen_range(range) as i32
-    } else {
-        0
-    };
+    // Compute total delay = base delay + jitter (can be negative).
+    let jitter = jitter_val;
     // Ensure total delay is non‑negative
     let total_delay_i32 = link.cfg.delay_ms as i32 + jitter;
     let total_delay = if total_delay_i32 < 0 { 0 } else { total_delay_i32 as u32 };
