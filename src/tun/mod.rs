@@ -20,7 +20,7 @@ use std::net::Ipv4Addr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::select;
 use tokio::signal;
-use tokio_tun::TunBuilder;
+// use tokio_tun::TunBuilder; // currently unused, kept for future reference
 
 fn ip_in_prefix(ip: &std::net::IpAddr, prefix: &str) -> bool {
     if prefix.is_empty() {
