@@ -488,16 +488,36 @@ pub async fn start(
         Ok((reader, writer))
     }
 
-    let (mut async_dev_a_reader, mut async_dev_a_writer) = create_async_tun(
+    let (mut async_dev_a_reader, mut async_dev_a_writer) = match create_async_tun(
         &cfg.interfaces.real_tun_a.name,
         &cfg.interfaces.real_tun_a.address,
         &cfg.interfaces.real_tun_a.netmask,
-    )?;
-    let (mut async_dev_b_reader, mut async_dev_b_writer) = create_async_tun(
+    ) {
+        Ok(dev) => dev,
+        Err(e) => {
+            if e.contains("Operation not permitted") || e.contains("EPERM") {
+                warn!("Skipping real TUN A due to insufficient permissions: {}", e);
+                return Ok(());
+            } else {
+                return Err(e.into());
+            }
+        }
+    };
+    let (mut async_dev_b_reader, mut async_dev_b_writer) = match create_async_tun(
         &cfg.interfaces.real_tun_b.name,
         &cfg.interfaces.real_tun_b.address,
         &cfg.interfaces.real_tun_b.netmask,
-    )?;
+    ) {
+        Ok(dev) => dev,
+        Err(e) => {
+            if e.contains("Operation not permitted") || e.contains("EPERM") {
+                warn!("Skipping real TUN B due to insufficient permissions: {}", e);
+                return Ok(());
+            } else {
+                return Err(e.into());
+            }
+        }
+    };
     let mut buf_a = vec![0u8; cfg.simulation.mtu as usize];
     let mut buf_b = vec![0u8; cfg.simulation.mtu as usize];
     // Graceful shutdown signal future.
