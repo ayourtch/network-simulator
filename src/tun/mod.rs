@@ -564,8 +564,19 @@ pub async fn start(
                         break;
                     }
                 };
-                let packet_bytes = &buf_a[..n];
-                let packet = match parse(packet_bytes) {
+                // TUN devices on Linux prepend a 4‑byte header (flags + protocol).
+                // Strip it if present before parsing.
+                let packet_slice = if n >= 4 {
+                    let proto = u16::from_be_bytes([buf_a[2], buf_a[3]]);
+                    if proto == 0x0800 || proto == 0x86DD {
+                        &buf_a[4..n]
+                    } else {
+                        &buf_a[..n]
+                    }
+                } else {
+                    &buf_a[..n]
+                };
+                let packet = match parse(packet_slice) {
                     Ok(p) => p,
                     Err(e) => {
                         error!("Failed to parse packet from TUN A: {}", e);
@@ -579,7 +590,20 @@ pub async fn start(
                 } else {
                     process_packet(fabric, &routing_tables, ingress.clone(), packet, destination).await
                 };
-                if let Err(e) = async_dev_b_writer.write_all(&processed.raw).await {
+                // Prepend the TUN header (flags 0, protocol) when writing to real TUN devices.
+                let write_buf = {
+                    // Determine protocol based on destination IP version.
+                    let proto: u16 = match processed.dst_ip {
+                        std::net::IpAddr::V4(_) => 0x0800,
+                        std::net::IpAddr::V6(_) => 0x86DD,
+                    };
+                    let mut v = Vec::with_capacity(4 + processed.raw.len());
+                    v.extend_from_slice(&[0u8, 0u8]);
+                    v.extend_from_slice(&proto.to_be_bytes());
+                    v.extend_from_slice(&processed.raw);
+                    v
+                };
+                if let Err(e) = async_dev_b_writer.write_all(&write_buf).await {
                     let err_msg = e.to_string();
                     if err_msg.contains("seek on unseekable file") {
                         warn!("Write to TUN B failed (unseekable), likely due to mock mode; ignoring.");
@@ -600,8 +624,18 @@ pub async fn start(
                         break;
                     }
                 };
-                let packet_bytes = &buf_b[..n];
-                let packet = match parse(packet_bytes) {
+                // Strip potential TUN 4‑byte header similar to TUN A.
+                let packet_slice = if n >= 4 {
+                    let proto = u16::from_be_bytes([buf_b[2], buf_b[3]]);
+                    if proto == 0x0800 || proto == 0x86DD {
+                        &buf_b[4..n]
+                    } else {
+                        &buf_b[..n]
+                    }
+                } else {
+                    &buf_b[..n]
+                };
+                let packet = match parse(packet_slice) {
                     Ok(p) => p,
                     Err(e) => {
                         error!("Failed to parse packet from TUN B: {}", e);
@@ -615,7 +649,19 @@ pub async fn start(
                 } else {
                     process_packet(fabric, &routing_tables, ingress.clone(), packet, destination).await
                 };
-                if let Err(e) = async_dev_a_writer.write_all(&processed.raw).await {
+                // Prepend TUN header when writing to TUN A.
+                let write_buf = {
+                    let proto: u16 = match processed.dst_ip {
+                        std::net::IpAddr::V4(_) => 0x0800,
+                        std::net::IpAddr::V6(_) => 0x86DD,
+                    };
+                    let mut v = Vec::with_capacity(4 + processed.raw.len());
+                    v.extend_from_slice(&[0u8, 0u8]);
+                    v.extend_from_slice(&proto.to_be_bytes());
+                    v.extend_from_slice(&processed.raw);
+                    v
+                };
+                if let Err(e) = async_dev_a_writer.write_all(&write_buf).await {
                     let err_msg = e.to_string();
                     if err_msg.contains("seek on unseekable file") {
                         warn!("Write to TUN A failed (unseekable), likely due to mock mode; ignoring.");
