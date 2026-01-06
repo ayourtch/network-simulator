@@ -12,7 +12,7 @@ use crate::config::VirtualCustomerConfig;
 
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
-// use std::time::Duration; // unused, kept for potential future use
+
 use std::net::Ipv4Addr;
 use tokio::select;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
