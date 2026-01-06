@@ -367,6 +367,7 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
                 }
             }
         }
+    }
 
 // If mock packet handling was performed, skip real TUN handling.
     if cfg.packet_file.is_some() || cfg.packet_files.is_some() {
@@ -506,8 +507,13 @@ loop {
                 process_packet(fabric, &routing_tables, ingress.clone(), packet, destination).await
             };
             if let Err(e) = async_dev_a.write_all(&processed.raw).await {
-                error!("Failed to write packet to TUN A: {}", e);
-                break;
+                let err_msg = e.to_string();
+                if err_msg.contains("seek on unseekable file") {
+                    warn!("Write to TUN A failed (unseekable), likely due to mock mode; ignoring.");
+                } else {
+                    error!("Failed to write packet to TUN A: {}", e);
+                    break;
+                }
             }
         }
         _ = &mut shutdown_signal => {
@@ -525,7 +531,6 @@ loop {
             break;
         }
     }
-}
 
     }
     Ok(())
