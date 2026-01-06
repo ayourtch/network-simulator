@@ -32,8 +32,10 @@ Rx0y0_Rx5y5 = { delay_ms = 0 }
     fs::write(&cfg_path, cfg_content).expect("write config");
 
     let mut cmd = cargo_bin_cmd!("network-simulator");
-    cmd.arg("--config").arg(&cfg_path)
-        .arg("--packet-file").arg(&empty_path);
+    cmd.arg("--config")
+        .arg(&cfg_path)
+        .arg("--packet-file")
+        .arg(&empty_path);
     // Should succeed even if the packet file is empty
     cmd.assert().success();
 

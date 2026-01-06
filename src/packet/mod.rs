@@ -44,7 +44,6 @@ pub fn update_ipv4_checksum(packet: &mut [u8]) {
     packet[11] = (checksum & 0xFF) as u8;
 }
 
-
 /// Minimal packet metadata used by the simulator.
 #[derive(Debug, Clone)]
 pub struct PacketMeta {
@@ -175,7 +174,9 @@ pub fn parse(data: &[u8]) -> Result<PacketMeta, &'static str> {
             transport_offset += ext_len;
         }
         // Extract ports for TCP/UDP if possible (offset after IPv6 (and any Hop-by-Hop) header)
-        let (src_port, dst_port) = if (next_header == 6 || next_header == 17) && data.len() >= transport_offset + 4 {
+        let (src_port, dst_port) = if (next_header == 6 || next_header == 17)
+            && data.len() >= transport_offset + 4
+        {
             let sp = u16::from_be_bytes([data[transport_offset], data[transport_offset + 1]]);
             let dp = u16::from_be_bytes([data[transport_offset + 2], data[transport_offset + 3]]);
             (sp, dp)
@@ -195,4 +196,3 @@ pub fn parse(data: &[u8]) -> Result<PacketMeta, &'static str> {
         Err("unsupported IP version")
     }
 }
-

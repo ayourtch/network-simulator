@@ -1,12 +1,15 @@
 // tests/tun_multiple_mock_test.rs
 
-use network_simulator::config::{SimulatorConfig, TunIngressConfig, TopologyConfig};
-use network_simulator::topology::{Fabric, router::{Router, RouterId}};
+use network_simulator::config::{SimulatorConfig, TopologyConfig, TunIngressConfig};
 use network_simulator::topology::link::LinkConfig;
+use network_simulator::topology::{
+    router::{Router, RouterId},
+    Fabric,
+};
 use network_simulator::tun;
 use std::collections::HashMap;
-use tempfile::NamedTempFile;
 use std::io::Write;
+use tempfile::NamedTempFile;
 use tokio::runtime::Runtime;
 
 #[test]
@@ -36,15 +39,27 @@ fn test_multiple_mock_packet_files_injection() {
         topology: TopologyConfig {
             routers: {
                 let mut map = HashMap::new();
-                map.insert("Rx0y0".to_string(), toml::Value::Table(toml::map::Map::new()));
-                map.insert("Rx0y1".to_string(), toml::Value::Table(toml::map::Map::new()));
+                map.insert(
+                    "Rx0y0".to_string(),
+                    toml::Value::Table(toml::map::Map::new()),
+                );
+                map.insert(
+                    "Rx0y1".to_string(),
+                    toml::Value::Table(toml::map::Map::new()),
+                );
                 map
             },
             links: {
                 let mut map = HashMap::new();
                 map.insert(
                     "Rx0y0_Rx0y1".to_string(),
-                    LinkConfig { mtu: None, delay_ms: 1, jitter_ms: 0, loss_percent: 0.0, load_balance: false },
+                    LinkConfig {
+                        mtu: None,
+                        delay_ms: 1,
+                        jitter_ms: 0,
+                        loss_percent: 0.0,
+                        load_balance: false,
+                    },
                 );
                 map
             },
@@ -59,11 +74,29 @@ fn test_multiple_mock_packet_files_injection() {
 
     // Build fabric.
     let mut fabric = Fabric::new();
-    let router_a = Router { id: RouterId("Rx0y0".to_string()), routing: Default::default(), stats: Default::default() };
-    let router_b = Router { id: RouterId("Rx0y1".to_string()), routing: Default::default(), stats: Default::default() };
+    let router_a = Router {
+        id: RouterId("Rx0y0".to_string()),
+        routing: Default::default(),
+        stats: Default::default(),
+    };
+    let router_b = Router {
+        id: RouterId("Rx0y1".to_string()),
+        routing: Default::default(),
+        stats: Default::default(),
+    };
     fabric.add_router(router_a);
     fabric.add_router(router_b);
-    fabric.add_link(&RouterId("Rx0y0".to_string()), &RouterId("Rx0y1".to_string()), LinkConfig { mtu: None, delay_ms: 1, jitter_ms: 0, loss_percent: 0.0, load_balance: false });
+    fabric.add_link(
+        &RouterId("Rx0y0".to_string()),
+        &RouterId("Rx0y1".to_string()),
+        LinkConfig {
+            mtu: None,
+            delay_ms: 1,
+            jitter_ms: 0,
+            loss_percent: 0.0,
+            load_balance: false,
+        },
+    );
 
     // Run the mock TUN processing.
     let rt = Runtime::new().unwrap();
@@ -76,8 +109,14 @@ fn test_multiple_mock_packet_files_injection() {
     let out2 = format!("{}_out.txt", path2);
     let contents1 = std::fs::read_to_string(&out1).expect("read out1");
     let contents2 = std::fs::read_to_string(&out2).expect("read out2");
-    assert!(!contents1.trim().is_empty(), "output for first file should not be empty");
-    assert!(!contents2.trim().is_empty(), "output for second file should not be empty");
+    assert!(
+        !contents1.trim().is_empty(),
+        "output for first file should not be empty"
+    );
+    assert!(
+        !contents2.trim().is_empty(),
+        "output for second file should not be empty"
+    );
 
     // Verify that packets passed through the link (counter > 0).
     let edge_idx = fabric.link_index.values().next().expect("link exists");

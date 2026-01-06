@@ -1,4 +1,4 @@
-use network_simulator::packet::{parse, calculate_ipv4_checksum};
+use network_simulator::packet::{calculate_ipv4_checksum, parse};
 
 #[test]
 fn test_raw_packet_ttl_decrement_preserves_raw() {
@@ -6,10 +6,8 @@ fn test_raw_packet_ttl_decrement_preserves_raw() {
     // Header fields: version/IHL=0x45, DSCP=0, total length=20, identification=0, flags/frag=0,
     // TTL=64, protocol=6 (TCP), header checksum=0, src=10.0.0.1, dst=10.0.0.2
     let raw: Vec<u8> = vec![
-        0x45, 0x00, 0x00, 0x14, 0x00, 0x00, 0x00, 0x00,
-        0x40, 0x06, 0x00, 0x00,
-        10, 0, 0, 1,
-        10, 0, 0, 2,
+        0x45, 0x00, 0x00, 0x14, 0x00, 0x00, 0x00, 0x00, 0x40, 0x06, 0x00, 0x00, 10, 0, 0, 1, 10, 0,
+        0, 2,
     ];
     let packet = parse(&raw).expect("parse failed");
     assert_eq!(packet.ttl, 64);

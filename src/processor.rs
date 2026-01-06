@@ -1,15 +1,15 @@
 // src/processor.rs
 
-use crate::routing::{Destination, RoutingTable};
-use crate::routing::multipath::MultiPathTable;
-use crate::topology::{Fabric, RouterId, Link};
 use crate::packet::{self, PacketMeta};
+use crate::routing::multipath::MultiPathTable;
+use crate::routing::{Destination, RoutingTable};
+use crate::topology::{Fabric, Link, RouterId};
 
-use crate::simulation::{simulate_link, SimulationError};
 use crate::forwarding::select_egress_link;
 use crate::icmp;
-use tracing::{debug, error};
+use crate::simulation::{simulate_link, SimulationError};
 use std::collections::HashMap;
+use tracing::{debug, error};
 
 // Helper to determine if a packet is IPv6.
 fn is_ipv6(packet: &PacketMeta) -> bool {
@@ -146,16 +146,19 @@ pub async fn process_packet(
                     } else {
                         return packet;
                     }
-                },
+                }
                 SimulationError::PacketLost => {
-                    debug!("Packet lost on link between {} and {}", ingress.0, next_hop.0);
+                    debug!(
+                        "Packet lost on link between {} and {}",
+                        ingress.0, next_hop.0
+                    );
                     if let Some(node_idx) = fabric.router_index.get(&ingress) {
                         if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
                             router.increment_lost();
                         }
                     }
                     break;
-                },
+                }
                 _ => {
                     break;
                 }
@@ -259,8 +262,13 @@ pub async fn process_packet_multi(
         }
         // Determine candidate links that connect to any of the equal‑cost next hops.
         let incident_links = fabric.incident_links(&ingress);
-        let mut candidate_links: Vec<&Link> = incident_links.iter()
-            .filter(|&&link| entries.iter().any(|e| e.next_hop == link.id.a || e.next_hop == link.id.b))
+        let mut candidate_links: Vec<&Link> = incident_links
+            .iter()
+            .filter(|&&link| {
+                entries
+                    .iter()
+                    .any(|e| e.next_hop == link.id.a || e.next_hop == link.id.b)
+            })
             .cloned()
             .collect();
         if candidate_links.is_empty() {
@@ -268,10 +276,13 @@ pub async fn process_packet_multi(
             candidate_links = incident_links;
         }
         // Load‑balance among candidate links with load_balance enabled, using counters.
-        let lb_links: Vec<&&Link> = candidate_links.iter().filter(|&&l| l.cfg.load_balance).collect();
+        let lb_links: Vec<&&Link> = candidate_links
+            .iter()
+            .filter(|&&l| l.cfg.load_balance)
+            .collect();
         let chosen_link = if !lb_links.is_empty() {
-            use std::hash::{Hash, Hasher};
             use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
             use std::sync::atomic::Ordering;
             let mut hasher = DefaultHasher::new();
             packet.src_ip.hash(&mut hasher);
@@ -280,7 +291,8 @@ pub async fn process_packet_multi(
             packet.dst_port.hash(&mut hasher);
             packet.protocol.hash(&mut hasher);
             // Include sum of counters of load‑balanced links.
-            let total_counter: u64 = lb_links.iter()
+            let total_counter: u64 = lb_links
+                .iter()
                 .map(|l| l.counter.load(Ordering::Relaxed))
                 .sum();
             total_counter.hash(&mut hasher);
@@ -318,16 +330,19 @@ pub async fn process_packet_multi(
                     } else {
                         return packet;
                     }
-                },
+                }
                 SimulationError::PacketLost => {
-                    debug!("Packet lost on link between {} and {}", ingress.0, next_hop.0);
+                    debug!(
+                        "Packet lost on link between {} and {}",
+                        ingress.0, next_hop.0
+                    );
                     if let Some(node_idx) = fabric.router_index.get(&ingress) {
                         if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
                             router.increment_lost();
                         }
                     }
                     break;
-                },
+                }
                 _ => {
                     break;
                 }
@@ -345,4 +360,3 @@ pub async fn process_packet_multi(
     }
     packet
 }
-

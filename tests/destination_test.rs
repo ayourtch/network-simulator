@@ -8,11 +8,11 @@ fn test_destination_enum_variants() {
     let b = Destination::TunB;
     // Ensure they are distinct and match pattern
     match a {
-        Destination::TunA => {},
+        Destination::TunA => {}
         _ => panic!("Expected TunA"),
     }
     match b {
-        Destination::TunB => {},
+        Destination::TunB => {}
         _ => panic!("Expected TunB"),
     }
     // Ensure Debug output contains variant names

@@ -42,11 +42,16 @@ packet_file = "unused_path"
     fs::write(&cfg_path, cfg_content).expect("write config");
 
     let mut cmd = cargo_bin_cmd!("network-simulator");
-    cmd.arg("--config").arg(&cfg_path)
-        .arg("--packet-file").arg(&packet_path)
-        .arg("--tun-name").arg("tun_test0")
-        .arg("--tun-address").arg("10.1.0.1")
-        .arg("--tun-netmask").arg("255.255.255.0");
+    cmd.arg("--config")
+        .arg(&cfg_path)
+        .arg("--packet-file")
+        .arg(&packet_path)
+        .arg("--tun-name")
+        .arg("tun_test0")
+        .arg("--tun-address")
+        .arg("10.1.0.1")
+        .arg("--tun-netmask")
+        .arg("255.255.255.0");
     cmd.assert().success();
     let _ = fs::remove_file(&cfg_path);
 }

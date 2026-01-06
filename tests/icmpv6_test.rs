@@ -1,13 +1,13 @@
-use network_simulator::packet::parse;
 use network_simulator::icmp::generate_icmpv6_error;
+use network_simulator::packet::parse;
 
 #[test]
 fn test_generate_icmpv6_time_exceeded() {
     // Minimal IPv6 packet (40 bytes header, no payload)
     let raw = vec![
         0x60, 0, 0, 0, // Version, Traffic Class, Flow Label
-        0, 0, // Payload length
-        6, // Next Header (TCP)
+        0, 0,  // Payload length
+        6,  // Next Header (TCP)
         64, // Hop Limit
         // Source address 2001:db8::1
         0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
@@ -16,7 +16,7 @@ fn test_generate_icmpv6_time_exceeded() {
     ];
     let packet = parse(&raw).expect("parse IPv6 packet");
     let icmp = generate_icmpv6_error(&packet, 3, 0); // Time Exceeded
-    // Verify IPv6 version
+                                                     // Verify IPv6 version
     assert_eq!(icmp[0] >> 4, 6);
     // Next Header should be ICMPv6 (58)
     assert_eq!(icmp[6], 58);

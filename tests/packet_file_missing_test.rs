@@ -27,8 +27,10 @@ Rx0y0_Rx0y0 = { delay_ms = 0 }
     fs::write(&cfg_path, cfg_content).expect("write config");
 
     let mut cmd = cargo_bin_cmd!("network-simulator");
-    cmd.arg("--config").arg(&cfg_path)
-        .arg("--packet-file").arg(missing_path);
+    cmd.arg("--config")
+        .arg(&cfg_path)
+        .arg("--packet-file")
+        .arg(missing_path);
     // Expect the command to fail because the packet file cannot be opened
     cmd.assert().failure();
 

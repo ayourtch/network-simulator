@@ -1,9 +1,9 @@
 // src/topology/mod.rs
 
-pub mod router;
-pub mod link;
 pub mod fabric;
+pub mod link;
+pub mod router;
 
-pub use router::{Router, RouterId, RouterStats};
-pub use link::{Link, LinkId, LinkConfig};
 pub use fabric::Fabric;
+pub use link::{Link, LinkConfig, LinkId};
+pub use router::{Router, RouterId, RouterStats};

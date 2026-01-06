@@ -1,11 +1,9 @@
 // tests/routing_compute_test.rs
 
-use network_simulator::config::{SimulatorConfig, TunIngressConfig, TopologyConfig};
+use network_simulator::config::{SimulatorConfig, TopologyConfig, TunIngressConfig};
 use network_simulator::topology::router::RouterId;
 use std::collections::HashMap;
 use toml::Value;
-
-
 
 #[test]
 fn test_compute_routing_tables_counts() {
@@ -33,11 +31,23 @@ fn test_compute_routing_tables_counts() {
                 let mut map = HashMap::new();
                 map.insert(
                     "Rx0y0_Rx0y1".to_string(),
-                    network_simulator::topology::link::LinkConfig { mtu: None, delay_ms: 1, jitter_ms: 0, loss_percent: 0.0, load_balance: true },
+                    network_simulator::topology::link::LinkConfig {
+                        mtu: None,
+                        delay_ms: 1,
+                        jitter_ms: 0,
+                        loss_percent: 0.0,
+                        load_balance: true,
+                    },
                 );
                 map.insert(
                     "Rx0y0_Rx0y2".to_string(),
-                    network_simulator::topology::link::LinkConfig { mtu: None, delay_ms: 1, jitter_ms: 0, loss_percent: 0.0, load_balance: true },
+                    network_simulator::topology::link::LinkConfig {
+                        mtu: None,
+                        delay_ms: 1,
+                        jitter_ms: 0,
+                        loss_percent: 0.0,
+                        load_balance: true,
+                    },
                 );
                 map
             },
@@ -83,11 +93,23 @@ fn test_compute_multipath_tables_when_enabled() {
                 let mut map = HashMap::new();
                 map.insert(
                     "Rx0y0_Rx0y1".to_string(),
-                    network_simulator::topology::link::LinkConfig { mtu: None, delay_ms: 1, jitter_ms: 0, loss_percent: 0.0, load_balance: true },
+                    network_simulator::topology::link::LinkConfig {
+                        mtu: None,
+                        delay_ms: 1,
+                        jitter_ms: 0,
+                        loss_percent: 0.0,
+                        load_balance: true,
+                    },
                 );
                 map.insert(
                     "Rx0y0_Rx0y2".to_string(),
-                    network_simulator::topology::link::LinkConfig { mtu: None, delay_ms: 1, jitter_ms: 0, loss_percent: 0.0, load_balance: true },
+                    network_simulator::topology::link::LinkConfig {
+                        mtu: None,
+                        delay_ms: 1,
+                        jitter_ms: 0,
+                        loss_percent: 0.0,
+                        load_balance: true,
+                    },
                 );
                 map
             },
@@ -103,7 +125,9 @@ fn test_compute_multipath_tables_when_enabled() {
     // Should have entries for each router.
     assert_eq!(tables.len(), 3);
     // Verify a router has non‑empty tun_a entries.
-    let entry = tables.get(&RouterId("Rx0y0".to_string())).expect("missing entry");
+    let entry = tables
+        .get(&RouterId("Rx0y0".to_string()))
+        .expect("missing entry");
     assert!(!entry.tun_a.is_empty());
 }
 
@@ -113,7 +137,10 @@ fn test_compute_multipath_tables_when_disabled() {
         simulation: Default::default(),
         interfaces: Default::default(),
         tun_ingress: Default::default(),
-        topology: TopologyConfig { routers: HashMap::new(), links: HashMap::new() },
+        topology: TopologyConfig {
+            routers: HashMap::new(),
+            links: HashMap::new(),
+        },
         enable_multipath: false,
         packet_file: None,
         packet_files: None,

@@ -36,8 +36,10 @@ Rx0y0_Rx5y5 = { delay_ms = 0 }
     fs::write(&cfg_path, cfg_content).expect("write config");
 
     let mut cmd = cargo_bin_cmd!("network-simulator");
-    cmd.arg("--config").arg(&cfg_path)
-        .arg("--packet-file").arg(&packet_path);
+    cmd.arg("--config")
+        .arg(&cfg_path)
+        .arg("--packet-file")
+        .arg(&packet_path);
     // The simulator should still exit successfully despite the malformed line
     cmd.assert().success();
 

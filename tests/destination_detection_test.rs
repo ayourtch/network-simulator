@@ -1,23 +1,53 @@
-use network_simulator::{config::SimulatorConfig, topology::{Fabric, RouterId}, routing::{Destination, compute_routing}, processor::process_packet, packet::{self, PacketMeta}};
+use network_simulator::{
+    config::SimulatorConfig,
+    packet::{self, PacketMeta},
+    processor::process_packet,
+    routing::{compute_routing, Destination},
+    topology::{Fabric, RouterId},
+};
 use std::net::IpAddr;
 
 #[tokio::test]
 async fn test_destination_detection_stops_forwarding() {
     // Build a simple topology with two routers and a link between them.
     let mut cfg = SimulatorConfig::default();
-    cfg.topology.routers.insert("Rx0y0".to_string(), toml::Value::Table(Default::default()));
-    cfg.topology.routers.insert("Rx0y1".to_string(), toml::Value::Table(Default::default()));
-    let link_cfg = network_simulator::topology::link::LinkConfig { mtu: Some(1500), delay_ms: 0, jitter_ms: 0, loss_percent: 0.0, load_balance: false };
-    cfg.topology.links.insert("Rx0y0_Rx0y1".to_string(), link_cfg);
+    cfg.topology
+        .routers
+        .insert("Rx0y0".to_string(), toml::Value::Table(Default::default()));
+    cfg.topology
+        .routers
+        .insert("Rx0y1".to_string(), toml::Value::Table(Default::default()));
+    let link_cfg = network_simulator::topology::link::LinkConfig {
+        mtu: Some(1500),
+        delay_ms: 0,
+        jitter_ms: 0,
+        loss_percent: 0.0,
+        load_balance: false,
+    };
+    cfg.topology
+        .links
+        .insert("Rx0y0_Rx0y1".to_string(), link_cfg);
     // Build fabric
     let mut fabric = Fabric::new();
-    let r0 = network_simulator::topology::router::Router { id: RouterId("Rx0y0".to_string()), routing: Default::default(), stats: Default::default() };
-    let r1 = network_simulator::topology::router::Router { id: RouterId("Rx0y1".to_string()), routing: Default::default(), stats: Default::default() };
+    let r0 = network_simulator::topology::router::Router {
+        id: RouterId("Rx0y0".to_string()),
+        routing: Default::default(),
+        stats: Default::default(),
+    };
+    let r1 = network_simulator::topology::router::Router {
+        id: RouterId("Rx0y1".to_string()),
+        routing: Default::default(),
+        stats: Default::default(),
+    };
     fabric.add_router(r0.clone());
     fabric.add_router(r1.clone());
     fabric.add_link(&r0.id, &r1.id, cfg.topology.links["Rx0y0_Rx0y1"].clone());
     // Compute routing tables (ingress A is Rx0y0, ingress B is Rx0y1)
-    let tables = compute_routing(&fabric, RouterId("Rx0y0".to_string()), RouterId("Rx0y1".to_string()));
+    let tables = compute_routing(
+        &fabric,
+        RouterId("Rx0y0".to_string()),
+        RouterId("Rx0y1".to_string()),
+    );
     // Create a packet with TTL 64.
     let raw = vec![0u8; 20]; // minimal IPv4 header (enough for parsing)
     let packet = packet::parse(&raw).unwrap_or(PacketMeta {
@@ -30,7 +60,14 @@ async fn test_destination_detection_stops_forwarding() {
         raw,
     });
     // Process packet from ingress Rx0y0 towards TunB (destination router is Rx0y1).
-    let result = process_packet(&mut fabric, &tables, RouterId("Rx0y0".to_string()), packet, Destination::TunB).await;
+    let result = process_packet(
+        &mut fabric,
+        &tables,
+        RouterId("Rx0y0".to_string()),
+        packet,
+        Destination::TunB,
+    )
+    .await;
     // The packet should have been forwarded once (TTL decremented) and then stopped at Rx0y1.
     assert_eq!(result.ttl, 63, "TTL should be decremented by one hop");
     // Ensure the packet's IPs are unchanged (no ICMP generation).

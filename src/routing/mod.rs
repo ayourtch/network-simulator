@@ -1,13 +1,13 @@
 // src/routing/mod.rs
 
+use crate::topology::{Fabric, RouterId};
+use petgraph::algo::dijkstra;
+use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::topology::{RouterId, Fabric};
-use petgraph::visit::EdgeRef;
-use petgraph::algo::dijkstra;
 
 pub mod multipath;
-pub use multipath::{MultiPathTable, compute_multi_path_routing};
+pub use multipath::{compute_multi_path_routing, MultiPathTable};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Destination {
@@ -23,7 +23,10 @@ pub struct RouteEntry {
 
 impl Default for RouteEntry {
     fn default() -> Self {
-        RouteEntry { next_hop: RouterId("".to_string()), total_cost: 0 }
+        RouteEntry {
+            next_hop: RouterId("".to_string()),
+            total_cost: 0,
+        }
     }
 }
 
@@ -35,16 +38,29 @@ pub struct RoutingTable {
 
 // Removed manual Default implementation for RoutingTable – now derived.
 
-
 /// Compute routing tables for all routers in the fabric.
 /// Returns a map from RouterId to its RoutingTable.
-pub fn compute_routing(fabric: &Fabric, ingress_a: RouterId, ingress_b: RouterId) -> HashMap<RouterId, RoutingTable> {
+pub fn compute_routing(
+    fabric: &Fabric,
+    ingress_a: RouterId,
+    ingress_b: RouterId,
+) -> HashMap<RouterId, RoutingTable> {
     // Helper to compute distances from a source router using Dijkstra.
-    fn distances_from(fabric: &Fabric, src: &RouterId) -> HashMap<petgraph::prelude::NodeIndex, u32> {
-        let src_idx = fabric.router_index.get(src).expect("ingress router missing in fabric");
+    fn distances_from(
+        fabric: &Fabric,
+        src: &RouterId,
+    ) -> HashMap<petgraph::prelude::NodeIndex, u32> {
+        let src_idx = fabric
+            .router_index
+            .get(src)
+            .expect("ingress router missing in fabric");
         dijkstra(&fabric.graph, *src_idx, None, |e| {
             let w = e.weight().cfg.delay_ms;
-            if w == 0 { 1 } else { w }
+            if w == 0 {
+                1
+            } else {
+                w
+            }
         })
     }
 
@@ -64,7 +80,10 @@ pub fn compute_routing(fabric: &Fabric, ingress_a: RouterId, ingress_b: RouterId
                 let neighbor_idx = edge.target();
                 let w = edge.weight().cfg.delay_ms;
                 let neighbor_dist = *dist_a.get(&neighbor_idx).unwrap_or(&u32::MAX);
-                if neighbor_dist != u32::MAX && total_cost_a != u32::MAX && neighbor_dist + if w == 0 {1} else {w} == total_cost_a {
+                if neighbor_dist != u32::MAX
+                    && total_cost_a != u32::MAX
+                    && neighbor_dist + if w == 0 { 1 } else { w } == total_cost_a
+                {
                     chosen = Some(fabric.graph[neighbor_idx].id.clone());
                     break;
                 }
@@ -82,7 +101,10 @@ pub fn compute_routing(fabric: &Fabric, ingress_a: RouterId, ingress_b: RouterId
                 let neighbor_idx = edge.target();
                 let w = edge.weight().cfg.delay_ms;
                 let neighbor_dist = *dist_b.get(&neighbor_idx).unwrap_or(&u32::MAX);
-                if neighbor_dist != u32::MAX && total_cost_b != u32::MAX && neighbor_dist + if w == 0 {1} else {w} == total_cost_b {
+                if neighbor_dist != u32::MAX
+                    && total_cost_b != u32::MAX
+                    && neighbor_dist + if w == 0 { 1 } else { w } == total_cost_b
+                {
                     chosen = Some(fabric.graph[neighbor_idx].id.clone());
                     break;
                 }
@@ -93,8 +115,14 @@ pub fn compute_routing(fabric: &Fabric, ingress_a: RouterId, ingress_b: RouterId
         tables.insert(
             router_id.clone(),
             RoutingTable {
-                tun_a: RouteEntry { next_hop: next_hop_a, total_cost: total_cost_a },
-                tun_b: RouteEntry { next_hop: next_hop_b, total_cost: total_cost_b },
+                tun_a: RouteEntry {
+                    next_hop: next_hop_a,
+                    total_cost: total_cost_a,
+                },
+                tun_b: RouteEntry {
+                    next_hop: next_hop_b,
+                    total_cost: total_cost_b,
+                },
             },
         );
     }

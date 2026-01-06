@@ -107,14 +107,14 @@ pub fn generate_icmp_error(original: &PacketMeta, error_type: u8, code: u8) -> V
     // IPv4 header
     packet.push(0x45); // Version 4, IHL 5
     packet.push(0x00); // DSCP/ECN
-    // Total length placeholder
+                       // Total length placeholder
     packet.extend_from_slice(&[0, 0]);
     packet.extend_from_slice(&[0, 0]); // Identification
     packet.extend_from_slice(&[0, 0]); // Flags+Fragment Offset
     packet.push(64); // TTL
     packet.push(1); // Protocol = ICMP
     packet.extend_from_slice(&[0, 0]); // Header checksum placeholder
-    // Source = original destination (router)
+                                       // Source = original destination (router)
     let src_ip = match original.dst_ip {
         std::net::IpAddr::V4(a) => a.octets(),
         _ => [0, 0, 0, 0],
@@ -131,7 +131,7 @@ pub fn generate_icmp_error(original: &PacketMeta, error_type: u8, code: u8) -> V
     packet.push(code);
     packet.extend_from_slice(&[0, 0]); // Checksum placeholder
     packet.extend_from_slice(&[0, 0, 0, 0]); // Unused/MTU field
-    // Include original IP header + first 8 bytes of payload
+                                             // Include original IP header + first 8 bytes of payload
     let copy_len = std::cmp::min(ORIGINAL_INCLUDE_LEN, original.raw.len());
     packet.extend_from_slice(&original.raw[..copy_len]);
     // Set total length
@@ -166,4 +166,3 @@ fn calculate_icmp_checksum(data: &[u8]) -> u16 {
     }
     !(sum as u16)
 }
-

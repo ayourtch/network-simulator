@@ -1,7 +1,7 @@
 // src/forwarding/mod.rs
 
-use crate::topology::{RouterId, Link};
 use crate::packet::PacketMeta;
+use crate::topology::{Link, RouterId};
 use std::collections::HashMap;
 use tracing::debug;
 
@@ -24,10 +24,14 @@ pub fn select_egress_link<'a>(
     };
 
     // Gather candidate links that lead to the next_hop.
-    let mut candidates: Vec<&Link> = links.iter().cloned().filter(|link| {
-        (link.id.a == *router_id && link.id.b == *next_hop) ||
-        (link.id.b == *router_id && link.id.a == *next_hop)
-    }).collect();
+    let mut candidates: Vec<&Link> = links
+        .iter()
+        .cloned()
+        .filter(|link| {
+            (link.id.a == *router_id && link.id.b == *next_hop)
+                || (link.id.b == *router_id && link.id.a == *next_hop)
+        })
+        .collect();
 
     if candidates.is_empty() {
         // No direct link – fallback to all links for possible load‑balancing.
@@ -37,8 +41,8 @@ pub fn select_egress_link<'a>(
     // Load balancing among links with load_balance enabled.
     let lb_links: Vec<&&Link> = candidates.iter().filter(|&&l| l.cfg.load_balance).collect();
     if !lb_links.is_empty() {
-        use std::hash::{Hash, Hasher};
         use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
         use std::sync::atomic::Ordering;
         let mut hasher = DefaultHasher::new();
         // Hash the 5‑tuple
@@ -48,14 +52,18 @@ pub fn select_egress_link<'a>(
         packet.dst_port.hash(&mut hasher);
         packet.protocol.hash(&mut hasher);
         // Include the sum of counters of all load‑balanced links to vary per packet
-        let total_counter: u64 = lb_links.iter()
+        let total_counter: u64 = lb_links
+            .iter()
             .map(|l| l.counter.load(Ordering::Relaxed))
             .sum();
         total_counter.hash(&mut hasher);
         let hash = hasher.finish();
         let idx = (hash as usize) % lb_links.len();
         let chosen = *lb_links[idx];
-        debug!("Load‑balanced selection of link {:?} for router {} (with counter)", chosen.id, router_id.0);
+        debug!(
+            "Load‑balanced selection of link {:?} for router {} (with counter)",
+            chosen.id, router_id.0
+        );
         return Some(chosen);
     }
 

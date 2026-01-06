@@ -1,13 +1,13 @@
 // src/simulation/mod.rs
 
 use crate::topology::Link;
-use tracing::debug;
-use rand::{Rng, SeedableRng};
-use rand::rngs::StdRng;
 use once_cell::sync::Lazy;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use std::sync::Mutex;
-use tokio::time::{sleep, Duration};
 use thiserror::Error;
+use tokio::time::{sleep, Duration};
+use tracing::debug;
 
 // Global RNG protected by a Mutex. Initialized with entropy, can be reseeded via init_rng.
 static GLOBAL_RNG: Lazy<Mutex<StdRng>> = Lazy::new(|| Mutex::new(StdRng::from_entropy()));
@@ -39,8 +39,16 @@ pub async fn simulate_link(link: &Link, packet: &[u8]) -> Result<(), SimulationE
     // MTU enforcement
     if let Some(mtu) = link.cfg.mtu {
         if packet.len() > mtu as usize {
-            debug!("Packet size {} exceeds MTU {} on link {:?}", packet.len(), mtu, link.id);
-            return Err(SimulationError::MtuExceeded { packet_size: packet.len(), mtu });
+            debug!(
+                "Packet size {} exceeds MTU {} on link {:?}",
+                packet.len(),
+                mtu,
+                link.id
+            );
+            return Err(SimulationError::MtuExceeded {
+                packet_size: packet.len(),
+                mtu,
+            });
         }
     }
 
@@ -58,7 +66,10 @@ pub async fn simulate_link(link: &Link, packet: &[u8]) -> Result<(), SimulationE
         (loss, jitter)
     };
     if loss_occurred {
-        debug!("Packet dropped on link {:?} due to loss ({}%)", link.id, link.cfg.loss_percent);
+        debug!(
+            "Packet dropped on link {:?} due to loss ({}%)",
+            link.id, link.cfg.loss_percent
+        );
         return Err(SimulationError::PacketLost);
     }
 
@@ -66,12 +77,18 @@ pub async fn simulate_link(link: &Link, packet: &[u8]) -> Result<(), SimulationE
     let jitter = jitter_val;
     // Ensure total delay is non‑negative
     let total_delay_i32 = link.cfg.delay_ms as i32 + jitter;
-    let total_delay = if total_delay_i32 < 0 { 0 } else { total_delay_i32 as u32 };
+    let total_delay = if total_delay_i32 < 0 {
+        0
+    } else {
+        total_delay_i32 as u32
+    };
     if total_delay > 0 {
-        debug!("Delaying packet on link {:?} by {} ms (jitter {} ms)", link.id, link.cfg.delay_ms, jitter);
+        debug!(
+            "Delaying packet on link {:?} by {} ms (jitter {} ms)",
+            link.id, link.cfg.delay_ms, jitter
+        );
         sleep(Duration::from_millis(total_delay as u64)).await;
     }
     debug!("Packet passed through link {:?}", link.id);
     Ok(())
 }
-

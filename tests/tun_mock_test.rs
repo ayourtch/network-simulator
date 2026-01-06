@@ -1,12 +1,12 @@
 // tests/tun_mock_test.rs
 
-use network_simulator::config::{SimulatorConfig, TunIngressConfig, TopologyConfig};
-use network_simulator::topology::{Fabric, router::Router, router::RouterId};
+use network_simulator::config::{SimulatorConfig, TopologyConfig, TunIngressConfig};
 use network_simulator::topology::link::LinkConfig;
+use network_simulator::topology::{router::Router, router::RouterId, Fabric};
 use network_simulator::tun;
 use std::collections::HashMap;
-use tempfile::NamedTempFile;
 use std::io::Write;
+use tempfile::NamedTempFile;
 use tokio::runtime::Runtime;
 
 #[test]
@@ -33,15 +33,27 @@ fn test_tun_mock_packet_processing() {
         topology: TopologyConfig {
             routers: {
                 let mut map = HashMap::new();
-                map.insert("Rx0y0".to_string(), toml::Value::Table(toml::map::Map::new()));
-                map.insert("Rx0y1".to_string(), toml::Value::Table(toml::map::Map::new()));
+                map.insert(
+                    "Rx0y0".to_string(),
+                    toml::Value::Table(toml::map::Map::new()),
+                );
+                map.insert(
+                    "Rx0y1".to_string(),
+                    toml::Value::Table(toml::map::Map::new()),
+                );
                 map
             },
             links: {
                 let mut map = HashMap::new();
                 map.insert(
                     "Rx0y0_Rx0y1".to_string(),
-                    LinkConfig { mtu: None, delay_ms: 1, jitter_ms: 0, loss_percent: 0.0, load_balance: false },
+                    LinkConfig {
+                        mtu: None,
+                        delay_ms: 1,
+                        jitter_ms: 0,
+                        loss_percent: 0.0,
+                        load_balance: false,
+                    },
                 );
                 map
             },
@@ -57,12 +69,30 @@ fn test_tun_mock_packet_processing() {
     // Build fabric as in lib::run.
     let mut fabric = Fabric::new();
     // Add routers.
-    let router_a = Router { id: RouterId("Rx0y0".to_string()), routing: Default::default(), stats: Default::default() };
-    let router_b = Router { id: RouterId("Rx0y1".to_string()), routing: Default::default(), stats: Default::default() };
+    let router_a = Router {
+        id: RouterId("Rx0y0".to_string()),
+        routing: Default::default(),
+        stats: Default::default(),
+    };
+    let router_b = Router {
+        id: RouterId("Rx0y1".to_string()),
+        routing: Default::default(),
+        stats: Default::default(),
+    };
     fabric.add_router(router_a);
     fabric.add_router(router_b);
     // Add link.
-    fabric.add_link(&RouterId("Rx0y0".to_string()), &RouterId("Rx0y1".to_string()), LinkConfig { mtu: None, delay_ms: 1, jitter_ms: 0, loss_percent: 0.0, load_balance: false });
+    fabric.add_link(
+        &RouterId("Rx0y0".to_string()),
+        &RouterId("Rx0y1".to_string()),
+        LinkConfig {
+            mtu: None,
+            delay_ms: 1,
+            jitter_ms: 0,
+            loss_percent: 0.0,
+            load_balance: false,
+        },
+    );
 
     // Run TUN mock processing.
     let rt = Runtime::new().unwrap();

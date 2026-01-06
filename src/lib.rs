@@ -1,24 +1,22 @@
 // src/lib.rs
 
 pub mod config;
-pub mod topology;
 pub mod routing;
+pub mod topology;
 pub use routing::Destination;
-pub mod tun;
-pub mod packet;
-pub mod simulation;
-pub mod icmp;
 pub mod forwarding;
+pub mod icmp;
+pub mod packet;
 pub mod processor;
+pub mod simulation;
+pub mod tun;
 
 use crate::config::SimulatorConfig;
-use crate::topology::Fabric;
-use crate::topology::router::RouterId;
-use tracing::{info, error, debug};
 use crate::processor::{process_packet, process_packet_multi};
+use crate::topology::router::RouterId;
+use crate::topology::Fabric;
 use std::collections::HashMap;
-
-
+use tracing::{debug, error, info};
 
 /// Compute routing tables (single‑path) for the given configuration.
 pub fn compute_routing_tables(cfg: &SimulatorConfig) -> HashMap<RouterId, routing::RoutingTable> {
@@ -34,7 +32,9 @@ pub fn compute_routing_tables(cfg: &SimulatorConfig) -> HashMap<RouterId, routin
     }
     for (link_name, link_cfg) in cfg.topology.links.iter() {
         let parts: Vec<&str> = link_name.split('_').collect();
-        if parts.len() != 2 { continue; }
+        if parts.len() != 2 {
+            continue;
+        }
         let a = RouterId(parts[0].to_string());
         let b = RouterId(parts[1].to_string());
         if fabric.router_index.contains_key(&a) && fabric.router_index.contains_key(&b) {
@@ -47,7 +47,9 @@ pub fn compute_routing_tables(cfg: &SimulatorConfig) -> HashMap<RouterId, routin
 }
 
 /// Compute multipath routing tables (if enabled) for the given configuration.
-pub fn compute_multipath_tables(cfg: &SimulatorConfig) -> HashMap<RouterId, routing::MultiPathTable> {
+pub fn compute_multipath_tables(
+    cfg: &SimulatorConfig,
+) -> HashMap<RouterId, routing::MultiPathTable> {
     if !cfg.enable_multipath {
         return HashMap::new();
     }
@@ -62,7 +64,9 @@ pub fn compute_multipath_tables(cfg: &SimulatorConfig) -> HashMap<RouterId, rout
     }
     for (link_name, link_cfg) in cfg.topology.links.iter() {
         let parts: Vec<&str> = link_name.split('_').collect();
-        if parts.len() != 2 { continue; }
+        if parts.len() != 2 {
+            continue;
+        }
         let a = RouterId(parts[0].to_string());
         let b = RouterId(parts[1].to_string());
         if fabric.router_index.contains_key(&a) && fabric.router_index.contains_key(&b) {
@@ -74,8 +78,6 @@ pub fn compute_multipath_tables(cfg: &SimulatorConfig) -> HashMap<RouterId, rout
     routing::compute_multi_path_routing(&fabric, ingress_a, ingress_b)
 }
 
-
-
 /// Entry point called from `main.rs`. Parses the configuration, builds the fabric,
 /// computes routing tables and (for now) immediately shuts down.
 pub async fn run(cfg: SimulatorConfig) -> Result<Fabric, Box<dyn std::error::Error>> {
@@ -86,8 +88,14 @@ pub async fn run(cfg: SimulatorConfig) -> Result<Fabric, Box<dyn std::error::Err
         let router = topology::router::Router {
             id: RouterId(router_id.clone()),
             routing: routing::RoutingTable {
-                tun_a: routing::RouteEntry { next_hop: RouterId("".to_string()), total_cost: 0 },
-                tun_b: routing::RouteEntry { next_hop: RouterId("".to_string()), total_cost: 0 },
+                tun_a: routing::RouteEntry {
+                    next_hop: RouterId("".to_string()),
+                    total_cost: 0,
+                },
+                tun_b: routing::RouteEntry {
+                    next_hop: RouterId("".to_string()),
+                    total_cost: 0,
+                },
             },
             stats: topology::router::RouterStats::default(),
         };
@@ -97,7 +105,9 @@ pub async fn run(cfg: SimulatorConfig) -> Result<Fabric, Box<dyn std::error::Err
     for (link_name, link_cfg) in cfg.topology.links.iter() {
         // split on '_' to get the two router ids
         let parts: Vec<&str> = link_name.split('_').collect();
-        if parts.len() != 2 { continue; }
+        if parts.len() != 2 {
+            continue;
+        }
         let a = RouterId(parts[0].to_string());
         let b = RouterId(parts[1].to_string());
         if fabric.router_index.contains_key(&a) && fabric.router_index.contains_key(&b) {
@@ -106,7 +116,11 @@ pub async fn run(cfg: SimulatorConfig) -> Result<Fabric, Box<dyn std::error::Err
             error!("Link {} references unknown router(s)", link_name);
         }
     }
-    info!("Fabric built with {} routers and {} links", fabric.router_index.len(), fabric.link_index.len());
+    info!(
+        "Fabric built with {} routers and {} links",
+        fabric.router_index.len(),
+        fabric.link_index.len()
+    );
 
     // Compute routing tables (stub – just logs)
     let ingress_a = RouterId(cfg.tun_ingress.tun_a_ingress.clone());
@@ -137,12 +151,30 @@ pub async fn run(cfg: SimulatorConfig) -> Result<Fabric, Box<dyn std::error::Err
         };
         debug!("Processing dummy packet at router {}", first_router_id.0);
         // Determine destination based on which ingress the router is (simplified):
-        let destination = if first_router_id == ingress_a { Destination::TunB } else { Destination::TunA };
+        let destination = if first_router_id == ingress_a {
+            Destination::TunB
+        } else {
+            Destination::TunA
+        };
         // Use single-path forwarding for now
-        process_packet(&mut fabric, &tables, first_router_id.clone(), dummy_packet.clone(), destination).await;
+        process_packet(
+            &mut fabric,
+            &tables,
+            first_router_id.clone(),
+            dummy_packet.clone(),
+            destination,
+        )
+        .await;
         // Also demonstrate multipath forwarding
         if cfg.enable_multipath {
-            process_packet_multi(&mut fabric, &multi_tables, first_router_id.clone(), dummy_packet, destination).await;
+            process_packet_multi(
+                &mut fabric,
+                &multi_tables,
+                first_router_id.clone(),
+                dummy_packet,
+                destination,
+            )
+            .await;
         }
     }
 

@@ -25,7 +25,10 @@ Rx0y0_Rx0y0 = { delay_ms = 0 }
 
     let cfg_str = fs::read_to_string(cfg_path).expect("read config");
     let cfg: SimulatorConfig = toml::from_str(&cfg_str).expect("parse config");
-    assert!(cfg.packet_file.is_none(), "packet_file should be None when not present");
+    assert!(
+        cfg.packet_file.is_none(),
+        "packet_file should be None when not present"
+    );
 
     let _ = fs::remove_file(cfg_path);
 }

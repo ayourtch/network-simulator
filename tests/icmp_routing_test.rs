@@ -1,10 +1,10 @@
 // tests/icmp_routing_test.rs
 
-use network_simulator::config::{SimulatorConfig, TunIngressConfig, TopologyConfig};
-use network_simulator::topology::{Fabric, router::Router, router::RouterId};
-use network_simulator::processor::{process_packet};
+use network_simulator::config::{SimulatorConfig, TopologyConfig, TunIngressConfig};
+use network_simulator::packet::PacketMeta;
+use network_simulator::processor::process_packet;
 use network_simulator::routing::{Destination, RoutingTable};
-use network_simulator::packet::{PacketMeta};
+use network_simulator::topology::{router::Router, router::RouterId, Fabric};
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
 use tokio::runtime::Runtime;
@@ -27,7 +27,11 @@ fn test_icmp_destination_unreachable_generated() {
 
     // Build minimal fabric with one router having a valid ID.
     let mut fabric = Fabric::new();
-    let router = Router { id: RouterId("Rx0y0".to_string()), routing: Default::default(), stats: Default::default() };
+    let router = Router {
+        id: RouterId("Rx0y0".to_string()),
+        routing: Default::default(),
+        stats: Default::default(),
+    };
     fabric.add_router(router);
 
     // Empty routing table (no entry for destination).
@@ -46,12 +50,29 @@ fn test_icmp_destination_unreachable_generated() {
 
     let rt = Runtime::new().unwrap();
     let processed = rt.block_on(async {
-        process_packet(&mut fabric, &tables, RouterId("Rx0y0".to_string()), packet, Destination::TunA).await
+        process_packet(
+            &mut fabric,
+            &tables,
+            RouterId("Rx0y0".to_string()),
+            packet,
+            Destination::TunA,
+        )
+        .await
     });
 
     // The processed packet should be an ICMP (protocol 1) indicating Destination Unreachable.
-    assert_eq!(processed.protocol, 1, "Expected ICMP protocol after routing failure");
+    assert_eq!(
+        processed.protocol, 1,
+        "Expected ICMP protocol after routing failure"
+    );
     // Router stats should show an ICMP generated.
-    let router_stats = fabric.get_router(&RouterId("Rx0y0".to_string())).unwrap().stats.clone();
-    assert!(router_stats.icmp_generated > 0, "ICMP counter should be incremented");
+    let router_stats = fabric
+        .get_router(&RouterId("Rx0y0".to_string()))
+        .unwrap()
+        .stats
+        .clone();
+    assert!(
+        router_stats.icmp_generated > 0,
+        "ICMP counter should be incremented"
+    );
 }

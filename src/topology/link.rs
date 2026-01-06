@@ -1,8 +1,8 @@
 // src/topology/link.rs
 
+use crate::topology::router::RouterId;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::AtomicU64;
-use crate::topology::router::RouterId;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct LinkId {
@@ -34,9 +34,15 @@ pub struct LinkConfig {
     pub load_balance: bool,
 }
 
-fn default_delay() -> u32 { 0 }
-fn default_jitter() -> u32 { 0 }
-fn default_loss() -> f32 { 0.0 }
+fn default_delay() -> u32 {
+    0
+}
+fn default_jitter() -> u32 {
+    0
+}
+fn default_loss() -> f32 {
+    0.0
+}
 
 #[derive(Debug)]
 pub struct Link {
@@ -63,4 +69,3 @@ impl Clone for Link {
         }
     }
 }
-

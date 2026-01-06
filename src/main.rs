@@ -1,10 +1,10 @@
 // src/main.rs
 
-use std::process;
 use clap::Parser;
-use tracing_subscriber::{fmt, EnvFilter};
 use network_simulator::config::SimulatorConfig;
 use std::fs;
+use std::process;
+use tracing_subscriber::{fmt, EnvFilter};
 
 /// Simple CLI for the network simulator.
 #[derive(Parser, Debug)]
@@ -32,7 +32,11 @@ struct Args {
     #[arg(long)]
     tun_netmask: Option<String>,
     /// Optional mock packet file (overrides config)
-    #[arg(short='p', long, help = "Path to a file containing hex‑encoded mock packets for the TUN interface")]
+    #[arg(
+        short = 'p',
+        long,
+        help = "Path to a file containing hex‑encoded mock packets for the TUN interface"
+    )]
     packet_file: Option<String>,
     /// Optional multiple mock packet files (overrides config)
     #[arg(long, action = clap::ArgAction::Append, help = "Additional packet files for mock TUNs")]
@@ -52,9 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         1 => EnvFilter::new("network_simulator=debug"),
         _ => EnvFilter::new("network_simulator=trace"),
     };
-    fmt::Subscriber::builder()
-        .with_env_filter(filter)
-        .init();
+    fmt::Subscriber::builder().with_env_filter(filter).init();
 
     let cfg_str = fs::read_to_string(&args.config)?;
     let mut cfg: SimulatorConfig = toml::from_str(&cfg_str)?;
@@ -95,12 +97,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.stats {
         println!("Router statistics after simulation:");
         for (router_id, stats) in fabric.get_statistics() {
-            println!("Router {}: recv={}, fwd={}, icmp={}, lost={}",
+            println!(
+                "Router {}: recv={}, fwd={}, icmp={}, lost={}",
                 router_id.0,
                 stats.packets_received,
                 stats.packets_forwarded,
                 stats.icmp_generated,
-                stats.packets_lost);
+                stats.packets_lost
+            );
         }
     }
     Ok(())

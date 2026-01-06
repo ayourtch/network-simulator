@@ -1,11 +1,11 @@
 // src/routing/multipath.rs
 
-use serde::{Serialize, Deserialize};
+use crate::routing::RouteEntry;
 use crate::topology::{Fabric, RouterId};
-use crate::routing::{RouteEntry};
-use std::collections::HashMap;
 use petgraph::algo::dijkstra;
 use petgraph::visit::EdgeRef;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Multi‑path routing table containing all equal‑cost next hops for each destination.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -21,11 +21,21 @@ pub fn compute_multi_path_routing(
     ingress_b: RouterId,
 ) -> HashMap<RouterId, MultiPathTable> {
     // Helper to compute distances from a source router using Dijkstra.
-    fn distances_from(fabric: &Fabric, src: &RouterId) -> HashMap<petgraph::prelude::NodeIndex, u32> {
-        let src_idx = fabric.router_index.get(src).expect("ingress router missing in fabric");
+    fn distances_from(
+        fabric: &Fabric,
+        src: &RouterId,
+    ) -> HashMap<petgraph::prelude::NodeIndex, u32> {
+        let src_idx = fabric
+            .router_index
+            .get(src)
+            .expect("ingress router missing in fabric");
         dijkstra(&fabric.graph, *src_idx, None, |e| {
             let w = e.weight().cfg.delay_ms;
-            if w == 0 { 1 } else { w }
+            if w == 0 {
+                1
+            } else {
+                w
+            }
         })
     }
 
@@ -38,7 +48,11 @@ pub fn compute_multi_path_routing(
         let mut entries_a = Vec::new();
         let mut min_cost_a = u32::MAX;
         for edge in fabric.graph.edges(node_idx) {
-            let neighbor_idx = if edge.source() == node_idx { edge.target() } else { edge.source() };
+            let neighbor_idx = if edge.source() == node_idx {
+                edge.target()
+            } else {
+                edge.source()
+            };
             let w = edge.weight().cfg.delay_ms;
             if let Some(&neighbor_dist) = dist_b.get(&neighbor_idx) {
                 if neighbor_dist != u32::MAX {
@@ -63,7 +77,11 @@ pub fn compute_multi_path_routing(
         let mut entries_b = Vec::new();
         let mut min_cost_b = u32::MAX;
         for edge in fabric.graph.edges(node_idx) {
-            let neighbor_idx = if edge.source() == node_idx { edge.target() } else { edge.source() };
+            let neighbor_idx = if edge.source() == node_idx {
+                edge.target()
+            } else {
+                edge.source()
+            };
             let w = edge.weight().cfg.delay_ms;
             if let Some(&neighbor_dist) = dist_a.get(&neighbor_idx) {
                 if neighbor_dist != u32::MAX {

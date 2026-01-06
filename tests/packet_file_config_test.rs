@@ -12,7 +12,8 @@ fn test_config_packet_file() {
     let packet_path = tmp_packet.path().to_str().unwrap().to_string();
 
     // Minimal config that includes packet_file entry
-    let cfg_content = format!(r#"
+    let cfg_content = format!(
+        r#"
 [simulation]
 mtu = 1500
 
@@ -39,7 +40,9 @@ Rx5y5 = {{}}
 
 [topology.links]
 Rx0y0_Rx5y5 = {{ delay_ms = 0 }}
-"#, packet_path);
+"#,
+        packet_path
+    );
     let cfg_path = "tests/tmp_config_packet.toml";
     fs::write(cfg_path, cfg_content).expect("write config");
 
