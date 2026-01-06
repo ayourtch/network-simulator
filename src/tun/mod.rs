@@ -452,29 +452,13 @@ pub async fn start(
                 // Configuration via cfg is obsolete; IPv6 address will be set via builder later.
                 // After interface is up, configure IPv6 address with prefix using system command (Linux).
                 // If netmask_str is empty, default to 64.
-                let prefix = if netmask_str.is_empty() {
+                let _prefix = if netmask_str.is_empty() {
                     64u8
                 } else {
                     netmask_str.parse::<u8>().map_err(|_| {
                         format!("Invalid IPv6 prefix '{}', expected 0-128", netmask_str)
                     })?
                 };
-                #[cfg(target_os = "linux")]
-                {
-                    use std::process::Command;
-                    let addr_with_prefix = format!("{}/{}", addr_str, prefix);
-                    let status = Command::new("ip")
-                        .args(["-6", "addr", "add", &addr_with_prefix, "dev", name])
-                        .status()
-                        .map_err(|e| format!("Failed to execute ip command for {}: {}", name, e))?;
-                    if !status.success() {
-                        return Err(format!(
-                            "ip command failed for {} with exit code {:?}",
-                            name,
-                            status.code()
-                        ));
-                    }
-                }
             }
         }
         // Build TUN device asynchronously using tokio-tun.
@@ -489,29 +473,13 @@ pub async fn start(
             std::net::IpAddr::V6(_v6) => {
                 // IPv6 address is configured via system command; no builder address call
                 // Optional IPv6 prefix handling via ip command if needed.
-                let prefix = if netmask_str.is_empty() {
+                let _prefix = if netmask_str.is_empty() {
                     64u8
                 } else {
                     netmask_str.parse::<u8>().map_err(|_| {
                         format!("Invalid IPv6 prefix '{}', expected 0-128", netmask_str)
                     })?
                 };
-                #[cfg(target_os = "linux")]
-                {
-                    use std::process::Command;
-                    let addr_with_prefix = format!("{}/{}", addr_str, prefix);
-                    let status = Command::new("ip")
-                        .args(["-6", "addr", "add", &addr_with_prefix, "dev", name])
-                        .status()
-                        .map_err(|e| format!("Failed to execute ip command for {}: {}", name, e))?;
-                    if !status.success() {
-                        return Err(format!(
-                            "ip command failed for {} with exit code {:?}",
-                            name,
-                            status.code()
-                        ));
-                    }
-                }
             }
         }
         let tun = builder.try_build().map_err(|e| e.to_string())?;
