@@ -497,11 +497,12 @@ pub async fn start(
     // Pin the shutdown future for select! macro.
     tokio::pin!(shutdown_signal);
     loop {
+        println!("Loop");
         select! {
             // Periodic virtual‑customer generation tick
             /*
             _ = async {
-                if let Some(ref mut int) = vc_interval {
+                if let Some(ref mut int) = _vc_interval {
                     int.tick().await;
                 } else {
                     pending::<()>().await;
@@ -514,6 +515,7 @@ pub async fn start(
 
             // Read from TUN A, forward to B.
             read_res = async_dev_a.read(&mut buf_a) => {
+                println!("READ from A: {:?}", &read_res);
                 let n = match read_res {
                     Ok(0) => { debug!("Read zero bytes from TUN device, continuing"); continue; }, // EOF (non-fatal)
                     Ok(n) => n,
@@ -543,15 +545,16 @@ pub async fn start(
                         warn!("Write to TUN B failed (unseekable), likely due to mock mode; ignoring.");
                     } else {
                         error!("Failed to write packet to TUN B: {}", e);
+                        break;
                     }
-                    break;
                 }
             }
             // Read from TUN B, forward to A.
             read_res = async_dev_b.read(&mut buf_b) => {
+                println!("READ from B: {:?}", &read_res);
                 let n = match read_res {
                     Ok(0) => { debug!("Read zero bytes from TUN device, continuing"); continue; }, // EOF (non-fatal)
-                    Ok(n) => n,
+                    Ok(n) => { debug!("Read {} bytes from B", n); n }
                     Err(e) => {
                         error!("Error reading from TUN B: {}", e);
                         break;
