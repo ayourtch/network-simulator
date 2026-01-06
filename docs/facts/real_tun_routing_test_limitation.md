@@ -1,0 +1,3 @@
+# Real TUN Routing Test Limitation Fact
+
+In the current CI environment the user does not have `CAP_NET_ADMIN`, so creating TUN interfaces (`ip tuntap add ...`) and adding routes (`ip route add 192.0.2.1 dev tunA`) fails with `Operation not permitted`. The simulator therefore cannot perform an end‑to‑end packet‑routing verification with real TUN devices here. The fallback logic in `src/tun/mod.rs` allows the simulator to run in mock mode, but full routing tests require a privileged environment (e.g., a VM or container with sudo).
