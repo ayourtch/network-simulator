@@ -122,7 +122,7 @@ pub fn parse(data: &[u8]) -> Result<PacketMeta, &'static str> {
         } else {
             (0, 0)
         };
-        return Ok(PacketMeta {
+        Ok(PacketMeta {
             src_ip: IpAddr::V4(src_ip),
             dst_ip: IpAddr::V4(dst_ip),
             src_port,
@@ -130,7 +130,7 @@ pub fn parse(data: &[u8]) -> Result<PacketMeta, &'static str> {
             protocol,
             ttl,
             raw: data.to_vec(),
-        });
+        })
     } else if version == 6 {
         // IPv6 parsing with optional Hop-by-Hop extension header handling
         if data.len() < 40 {
@@ -182,7 +182,7 @@ pub fn parse(data: &[u8]) -> Result<PacketMeta, &'static str> {
         } else {
             (0, 0)
         };
-        return Ok(PacketMeta {
+        Ok(PacketMeta {
             src_ip: IpAddr::V6(src_ip),
             dst_ip: IpAddr::V6(dst_ip),
             src_port,
@@ -190,9 +190,9 @@ pub fn parse(data: &[u8]) -> Result<PacketMeta, &'static str> {
             protocol: next_header,
             ttl: hop_limit,
             raw: data.to_vec(),
-        });
+        })
     } else {
-        return Err("unsupported IP version");
+        Err("unsupported IP version")
     }
 }
 

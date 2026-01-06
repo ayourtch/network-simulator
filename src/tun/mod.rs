@@ -1,4 +1,6 @@
+#![allow(clippy::collapsible_else_if)]
 // src/tun/mod.rs
+
 
 use crate::config::SimulatorConfig;
 use crate::topology::Fabric;
@@ -171,9 +173,9 @@ pub async fn start(cfg: &SimulatorConfig, fabric: &mut Fabric) -> Result<(), Box
     // Compute routing tables once.
     let ingress_a = RouterId(cfg.tun_ingress.tun_a_ingress.clone());
     let ingress_b = RouterId(cfg.tun_ingress.tun_b_ingress.clone());
-    let routing_tables = compute_routing(&fabric, ingress_a.clone(), ingress_b.clone());
+    let routing_tables = compute_routing(fabric, ingress_a.clone(), ingress_b.clone());
     let multipath_tables = if cfg.enable_multipath {
-        compute_multi_path_routing(&fabric, ingress_a.clone(), ingress_b.clone())
+        compute_multi_path_routing(fabric, ingress_a.clone(), ingress_b.clone())
     } else {
         std::collections::HashMap::new()
     };

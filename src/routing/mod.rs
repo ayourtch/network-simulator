@@ -27,17 +27,14 @@ impl Default for RouteEntry {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RoutingTable {
     pub tun_a: RouteEntry,
     pub tun_b: RouteEntry,
 }
 
-impl Default for RoutingTable {
-    fn default() -> Self {
-        RoutingTable { tun_a: RouteEntry::default(), tun_b: RouteEntry::default() }
-    }
-}
+// Removed manual Default implementation for RoutingTable – now derived.
+
 
 /// Compute routing tables for all routers in the fabric.
 /// Returns a map from RouterId to its RoutingTable.
