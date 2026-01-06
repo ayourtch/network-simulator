@@ -1,0 +1,1 @@
+The mock TUN implementation now writes processed packet bytes as hex strings to a corresponding *_out.txt file, simulating write‑back to the opposite TUN interface.

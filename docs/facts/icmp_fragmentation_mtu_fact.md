@@ -1,0 +1,1 @@
+ICMP Fragmentation Needed packets must include the Next‑Hop MTU field (2 bytes) after the checksum placeholder, containing the link MTU in big‑endian order.
