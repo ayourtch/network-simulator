@@ -14,10 +14,11 @@ use crate::topology::Fabric;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 
-use futures::future::pending; // pending not used currently
+use futures::future::pending; // used for idle handling when no virtual‑customer interval is configured
 use ipnet::IpNet;
 use std::net::Ipv4Addr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::process::Command;
 use tokio::select;
 use tokio::signal;
 // use tokio_tun::TunBuilder; // currently unused, kept for future reference
@@ -423,7 +424,7 @@ pub async fn start(
     // Packets read from tun_a are considered ingress_a and sent out via tun_b, and vice versa.
 
     // Helper to create async TUN device from config.
-    fn create_async_tun(
+    async fn create_async_tun(
         name: &str,
         addr_str: &str,
         netmask_str: &str,
@@ -439,19 +440,13 @@ pub async fn start(
         let ip_addr = addr_str
             .parse::<std::net::IpAddr>()
             .map_err(|_| format!("Invalid IP address for TUN {}: '{}'", name, addr_str))?;
+        // Parse the IP address; for IPv6 we also need the address for the builder.
         match ip_addr {
             std::net::IpAddr::V4(_v4) => {
-                // IPv4: use provided netmask (fallback defaults).
-                let _netmask = netmask_str
-                    .parse::<Ipv4Addr>()
-                    .unwrap_or(Ipv4Addr::new(255, 255, 255, 0));
-                // Configuration via cfg is obsolete; IPv4 address will be set via builder later.
+                // IPv4: nothing extra needed here; netmask will be applied when building.
             }
             std::net::IpAddr::V6(_v6) => {
-                // IPv6: apply prefix length (netmask_str) if provided, default /64.
-                // Configuration via cfg is obsolete; IPv6 address will be set via builder later.
-                // After interface is up, configure IPv6 address with prefix using system command (Linux).
-                // If netmask_str is empty, default to 64.
+                // IPv6: netmask_str is interpreted as prefix length; default to 64 if empty.
                 let _prefix = if netmask_str.is_empty() {
                     64u8
                 } else {
@@ -459,30 +454,45 @@ pub async fn start(
                         format!("Invalid IPv6 prefix '{}', expected 0-128", netmask_str)
                     })?
                 };
+                // No further action needed; IPv6 address will be configured via system command after interface is up.
             }
         }
         // Build TUN device asynchronously using tokio-tun.
         let mut builder = tokio_tun::TunBuilder::default().name(name).up();
         match ip_addr {
-            std::net::IpAddr::V4(_v4) => {
-                let _netmask = netmask_str
+            std::net::IpAddr::V4(v4) => {
+                let netmask = netmask_str
                     .parse::<Ipv4Addr>()
                     .unwrap_or(Ipv4Addr::new(255, 255, 255, 0));
-                builder = builder.address(_v4).netmask(_netmask);
+                builder = builder.address(v4).netmask(netmask);
             }
             std::net::IpAddr::V6(_v6) => {
-                // IPv6 address is configured via system command; no builder address call
-                // Optional IPv6 prefix handling via ip command if needed.
-                let _prefix = if netmask_str.is_empty() {
-                    64u8
-                } else {
-                    netmask_str.parse::<u8>().map_err(|_| {
-                        format!("Invalid IPv6 prefix '{}', expected 0-128", netmask_str)
-                    })?
-                };
+                // IPv6 address configuration not directly supported by tokio-tun builder.
+                // It will be set via a system command after the interface is up.
+                // No builder address call is made here.
             }
         }
         let tun = builder.try_build().map_err(|e| e.to_string())?;
+        // For IPv6, configure address and prefix using system command if needed.
+        if let std::net::IpAddr::V6(v6_addr) = ip_addr {
+            // Determine prefix length (netmask_str) – default to 64 if empty or invalid.
+            let prefix: u8 = if netmask_str.is_empty() {
+                64
+            } else {
+                netmask_str.parse::<u8>().unwrap_or(64)
+            };
+            // Construct address/prefix string, e.g., "2001:db8::1/64".
+            let addr_with_prefix = format!("{}/{}", v6_addr, prefix);
+            // Use the `ip` command to assign the address to the TUN interface.
+            // Use async command to avoid blocking the runtime.
+            let status = Command::new("ip")
+                .args(&["-6", "addr", "add", &addr_with_prefix, "dev", name])
+                .status()
+                .await;
+            if let Err(e) = status {
+                warn!("Failed to set IPv6 address on TUN {}: {}", name, e);
+            }
+        }
         // Split into read/write halves.
         let (reader, writer) = tokio::io::split(tun);
         Ok((reader, writer))
@@ -492,7 +502,9 @@ pub async fn start(
         &cfg.interfaces.real_tun_a.name,
         &cfg.interfaces.real_tun_a.address,
         &cfg.interfaces.real_tun_a.netmask,
-    ) {
+    )
+    .await
+    {
         Ok(dev) => dev,
         Err(e) => {
             if e.contains("Operation not permitted") || e.contains("EPERM") {
@@ -507,7 +519,9 @@ pub async fn start(
         &cfg.interfaces.real_tun_b.name,
         &cfg.interfaces.real_tun_b.address,
         &cfg.interfaces.real_tun_b.netmask,
-    ) {
+    )
+    .await
+    {
         Ok(dev) => dev,
         Err(e) => {
             if e.contains("Operation not permitted") || e.contains("EPERM") {
@@ -525,7 +539,7 @@ pub async fn start(
     // Pin the shutdown future for select! macro.
     tokio::pin!(shutdown_signal);
     loop {
-        println!("Loop");
+        debug!("Entering dual‑TUN processing loop");
         select! {
             // Periodic virtual‑customer generation tick
                         _ = async {
@@ -542,7 +556,7 @@ pub async fn start(
 
             // Read from TUN A, forward to B.
             read_res = async_dev_a_reader.read(&mut buf_a) => {
-                println!("READ from A: {:?}", &read_res);
+                debug!("Read result from TUN A: {:?}", read_res);
                 let n = match read_res {
                     Ok(0) => { debug!("Read zero bytes from TUN device, continuing"); continue; }, // EOF (non-fatal)
                     Ok(n) => n,
@@ -602,7 +616,7 @@ pub async fn start(
             }
             // Read from TUN B, forward to A.
             read_res = async_dev_b_reader.read(&mut buf_b) => {
-                println!("READ from B: {:?}", &read_res);
+                debug!("Read result from TUN B: {:?}", read_res);
                 let n = match read_res {
                     Ok(0) => { debug!("Read zero bytes from TUN device, continuing"); continue; }, // EOF (non-fatal)
                     Ok(n) => { debug!("Read {} bytes from B", n); n }
