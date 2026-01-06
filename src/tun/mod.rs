@@ -499,6 +499,7 @@ pub async fn start(
     loop {
         select! {
             // Periodic virtual‑customer generation tick
+            /*
             _ = async {
                 if let Some(ref mut int) = vc_interval {
                     int.tick().await;
@@ -509,12 +510,12 @@ pub async fn start(
                 if let Some(vc) = &cfg.virtual_customer {
                     generate_virtual_packet(vc, cfg, fabric, &routing_tables, &multipath_tables, &ingress_a, &ingress_b).await;
                 }
-            },
+            }, */
 
             // Read from TUN A, forward to B.
             read_res = async_dev_a.read(&mut buf_a) => {
                 let n = match read_res {
-                    Ok(0) => break, // EOF
+                    Ok(0) => { debug!("Read zero bytes from TUN device, continuing"); continue; }, // EOF (non-fatal)
                     Ok(n) => n,
                     Err(e) => {
                         error!("Error reading from TUN A: {}", e);
@@ -549,7 +550,7 @@ pub async fn start(
             // Read from TUN B, forward to A.
             read_res = async_dev_b.read(&mut buf_b) => {
                 let n = match read_res {
-                    Ok(0) => break, // EOF
+                    Ok(0) => { debug!("Read zero bytes from TUN device, continuing"); continue; }, // EOF (non-fatal)
                     Ok(n) => n,
                     Err(e) => {
                         error!("Error reading from TUN B: {}", e);
