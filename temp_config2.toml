@@ -1,0 +1,25 @@
+[simulation]
+mtu = 1500
+
+[interfaces]
+[interfaces.real_tun_a]
+name = ""
+address = ""
+netmask = ""
+[interfaces.real_tun_b]
+name = ""
+address = ""
+netmask = ""
+
+[tun_ingress]
+tun_a_ingress = "Rx0y0"
+tun_b_ingress = "Rx0y1"
+
+packet_file = "examples/packet_hex.txt"
+
+[topology.routers]
+Rx0y0 = {}
+Rx0y1 = {}
+
+[topology.links]
+Rx0y0_Rx0y1 = { delay_ms = 10, jitter_ms = 0, loss_percent = 0, mtu = 1500 }

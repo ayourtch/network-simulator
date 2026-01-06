@@ -6,35 +6,26 @@ use tracing::debug;
 
 /// Compute ICMPv6 checksum with pseudo‑header.
 fn icmpv6_checksum(src: Ipv6Addr, dst: Ipv6Addr, icmp: &[u8]) -> u16 {
-    // Pseudo‑header: src (16), dst (16), payload length (4), zeros (3), next header (1)
+    // Pseudo‑header: src (16), dst (16), payload length (4), zeros (3), next header (58 for ICMPv6)
     let mut sum: u32 = 0;
     for chunk in src.octets().chunks(2) {
-        let word = u16::from_be_bytes([chunk[0], chunk[1]]) as u32;
-        sum += word;
+        sum += u16::from_be_bytes([chunk[0], chunk[1]]) as u32;
     }
     for chunk in dst.octets().chunks(2) {
-        let word = u16::from_be_bytes([chunk[0], chunk[1]]) as u32;
-        sum += word;
+        sum += u16::from_be_bytes([chunk[0], chunk[1]]) as u32;
     }
-    // payload length
     let len = icmp.len() as u32;
-    sum += (len >> 16) & 0xFFFF; // high 16 bits (should be zero)
-    sum += len & 0xFFFF;
-    // three zero bytes + next header (58 for ICMPv6)
-    sum += 58;
-    // ICMP payload
+    sum += (len >> 16) & 0xFFFF; // high 16 bits (normally 0)
+    sum += len & 0xFFFF; // low 16 bits
+    sum += 58; // Next Header = ICMPv6
     let mut i = 0;
     while i + 1 < icmp.len() {
-        let word = u16::from_be_bytes([icmp[i], icmp[i + 1]]) as u32;
-        sum += word;
+        sum += u16::from_be_bytes([icmp[i], icmp[i + 1]]) as u32;
         i += 2;
     }
     if i < icmp.len() {
-        // odd length, pad with zero
-        let word = (icmp[i] as u32) << 8;
-        sum += word;
+        sum += (icmp[i] as u32) << 8; // pad odd byte
     }
-    // add carries
     while (sum >> 16) != 0 {
         sum = (sum & 0xFFFF) + (sum >> 16);
     }
@@ -49,16 +40,12 @@ pub fn generate_icmpv6_error(packet: &PacketMeta, error_type: u8, code: u8) -> V
     debug!("Generating ICMPv6 error type {} code {}", error_type, code);
     let mut buf: Vec<u8> = Vec::new();
     // IPv6 header (40 bytes)
-    // Version (6), Traffic Class & Flow Label = 0
-    buf.extend_from_slice(&[0x60, 0, 0, 0]);
-    // Payload length placeholder (will be set later)
+    buf.extend_from_slice(&[0x60, 0, 0, 0]); // Version/Traffic Class/Flow Label
     let payload_len_pos = buf.len();
-    buf.extend_from_slice(&[0, 0]);
-    // Next Header = 58 (ICMPv6)
-    buf.push(58);
-    // Hop Limit = 64 (arbitrary)
-    buf.push(64);
-    // Source address = destination of the original packet (router)
+    buf.extend_from_slice(&[0, 0]); // placeholder for payload length
+    buf.push(58); // Next Header = ICMPv6
+    buf.push(64); // Hop Limit (arbitrary)
+                  // Source address = destination of the original packet (router)
     let src = match packet.dst_ip {
         std::net::IpAddr::V6(a) => a,
         _ => Ipv6Addr::UNSPECIFIED,
@@ -73,10 +60,9 @@ pub fn generate_icmpv6_error(packet: &PacketMeta, error_type: u8, code: u8) -> V
     // ICMPv6 header
     buf.push(error_type);
     buf.push(code);
-    // checksum placeholder
-    buf.extend_from_slice(&[0, 0]);
-    // For Time Exceeded (type 3) include 4‑byte unused field
+    buf.extend_from_slice(&[0, 0]); // checksum placeholder
     if error_type == 3 {
+        // Time Exceeded includes 4‑byte unused field
         buf.extend_from_slice(&[0, 0, 0, 0]);
     }
     // Append as much of the original packet as will fit within the IPv6 minimum MTU (1280)
@@ -95,22 +81,36 @@ pub fn generate_icmpv6_error(packet: &PacketMeta, error_type: u8, code: u8) -> V
     buf
 }
 
-/// Generate a minimal ICMP error packet for IPv4 (stub).
-// Generate a proper ICMP error packet for IPv4.
-// `error_type` and `code` follow the ICMP specification.
+/// Compute ICMP checksum (RFC 792).
+fn calculate_icmp_checksum(data: &[u8]) -> u16 {
+    let mut sum: u32 = 0;
+    let mut i = 0;
+    while i + 1 < data.len() {
+        sum += u16::from_be_bytes([data[i], data[i + 1]]) as u32;
+        i += 2;
+    }
+    if i < data.len() {
+        sum += (data[i] as u32) << 8;
+    }
+    while (sum >> 16) != 0 {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+    !(sum as u16)
+}
+
+/// Generate a generic ICMP error packet for IPv4.
+/// `error_type` and `code` follow the ICMP specification.
+/// For specific errors like Fragmentation Needed, use the dedicated function.
 pub fn generate_icmp_error(original: &PacketMeta, error_type: u8, code: u8) -> Vec<u8> {
-    debug!("Generating ICMP error type {} code {}", error_type, code);
     const IPV4_HEADER_LEN: usize = 20;
-    const ICMP_HEADER_LEN: usize = 8;
-    const ORIGINAL_INCLUDE_LEN: usize = 28; // IP header (20) + 8 bytes of payload
-    let mut packet = Vec::with_capacity(IPV4_HEADER_LEN + ICMP_HEADER_LEN + ORIGINAL_INCLUDE_LEN);
+    const ORIGINAL_INCLUDE_LEN: usize = 28; // IP header + 8 bytes of payload
+    let mut packet = Vec::with_capacity(IPV4_HEADER_LEN + 8 + ORIGINAL_INCLUDE_LEN);
     // IPv4 header
-    packet.push(0x45); // Version 4, IHL 5
+    packet.push(0x45); // Version/IHL
     packet.push(0x00); // DSCP/ECN
-                       // Total length placeholder
-    packet.extend_from_slice(&[0, 0]);
+    packet.extend_from_slice(&[0, 0]); // Total length placeholder
     packet.extend_from_slice(&[0, 0]); // Identification
-    packet.extend_from_slice(&[0, 0]); // Flags+Fragment Offset
+    packet.extend_from_slice(&[0, 0]); // Flags/Fragment Offset
     packet.push(64); // TTL
     packet.push(1); // Protocol = ICMP
     packet.extend_from_slice(&[0, 0]); // Header checksum placeholder
@@ -130,8 +130,9 @@ pub fn generate_icmp_error(original: &PacketMeta, error_type: u8, code: u8) -> V
     packet.push(error_type);
     packet.push(code);
     packet.extend_from_slice(&[0, 0]); // Checksum placeholder
-    packet.extend_from_slice(&[0, 0, 0, 0]); // Unused/MTU field
-                                             // Include original IP header + first 8 bytes of payload
+                                       // Unused (2 bytes) + MTU field (2 bytes) – zero for generic errors
+    packet.extend_from_slice(&[0, 0, 0, 0]);
+    // Include original IP header + first 8 bytes of payload
     let copy_len = std::cmp::min(ORIGINAL_INCLUDE_LEN, original.raw.len());
     packet.extend_from_slice(&original.raw[..copy_len]);
     // Set total length
@@ -148,21 +149,52 @@ pub fn generate_icmp_error(original: &PacketMeta, error_type: u8, code: u8) -> V
     packet
 }
 
-/// Calculate ICMP checksum (RFC 792) over the provided slice.
-fn calculate_icmp_checksum(data: &[u8]) -> u16 {
-    let mut sum: u32 = 0;
-    let mut i = 0;
-    while i + 1 < data.len() {
-        let word = u16::from_be_bytes([data[i], data[i + 1]]) as u32;
-        sum += word;
-        i += 2;
-    }
-    if i < data.len() {
-        let word = (data[i] as u32) << 8;
-        sum += word;
-    }
-    while (sum >> 16) != 0 {
-        sum = (sum & 0xFFFF) + (sum >> 16);
-    }
-    !(sum as u16)
+/// Generate ICMP Destination Unreachable – Fragmentation Needed (type 3, code 4).
+pub fn generate_fragmentation_needed(original: &PacketMeta, mtu: u32) -> Vec<u8> {
+    const IPV4_HEADER_LEN: usize = 20;
+    const ORIGINAL_INCLUDE_LEN: usize = 28;
+    let mut packet = Vec::with_capacity(IPV4_HEADER_LEN + 8 + ORIGINAL_INCLUDE_LEN);
+    // IPv4 header
+    packet.push(0x45);
+    packet.push(0x00);
+    packet.extend_from_slice(&[0, 0]); // Total length placeholder
+    packet.extend_from_slice(&[0, 0]); // Identification
+    packet.extend_from_slice(&[0, 0]); // Flags/Fragment Offset
+    packet.push(64);
+    packet.push(1); // Protocol = ICMP
+    packet.extend_from_slice(&[0, 0]); // Header checksum placeholder
+                                       // Source = original destination (router)
+    let src_ip = match original.dst_ip {
+        std::net::IpAddr::V4(a) => a.octets(),
+        _ => [0, 0, 0, 0],
+    };
+    packet.extend_from_slice(&src_ip);
+    // Destination = original source
+    let dst_ip = match original.src_ip {
+        std::net::IpAddr::V4(a) => a.octets(),
+        _ => [0, 0, 0, 0],
+    };
+    packet.extend_from_slice(&dst_ip);
+    // ICMP header for Fragmentation Needed
+    packet.push(3); // Type
+    packet.push(4); // Code
+    packet.extend_from_slice(&[0, 0]); // Checksum placeholder
+    packet.extend_from_slice(&[0, 0]); // Unused
+    let mtu16 = (mtu as u16).to_be_bytes();
+    packet.extend_from_slice(&mtu16);
+    // Include original IP header + first 8 bytes of payload
+    let copy_len = std::cmp::min(ORIGINAL_INCLUDE_LEN, original.raw.len());
+    packet.extend_from_slice(&original.raw[..copy_len]);
+    // Set total length
+    let total_len = packet.len() as u16;
+    packet[2] = (total_len >> 8) as u8;
+    packet[3] = (total_len & 0xFF) as u8;
+    // Compute IPv4 header checksum
+    crate::packet::update_ipv4_checksum(&mut packet[..IPV4_HEADER_LEN]);
+    // Compute ICMP checksum
+    let icmp_start = IPV4_HEADER_LEN;
+    let icmp_checksum = calculate_icmp_checksum(&packet[icmp_start..]);
+    packet[icmp_start + 2] = (icmp_checksum >> 8) as u8;
+    packet[icmp_start + 3] = (icmp_checksum & 0xFF) as u8;
+    packet
 }
