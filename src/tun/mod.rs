@@ -14,12 +14,13 @@ use crate::topology::Fabric;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 
-use futures::future::pending;
+// use futures::future::pending; // pending not used currently
 use ipnet::IpNet;
 use std::net::Ipv4Addr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::select;
 use tokio::signal;
+use tokio_tun::TunBuilder;
 
 fn ip_in_prefix(ip: &std::net::IpAddr, prefix: &str) -> bool {
     if prefix.is_empty() {
@@ -31,8 +32,8 @@ fn ip_in_prefix(ip: &std::net::IpAddr, prefix: &str) -> bool {
     }
 }
 
-use tun::platform::Device as TunDevice;
-use tun::Configuration;
+// // use tun::platform::Device as TunDevice; // Deprecated, using tokio-tun instead // Deprecated, using tokio-tun instead
+// use tun::Configuration; // Deprecated, not needed with tokio-tun
 
 use tracing::{debug, error, info, warn};
 
@@ -426,8 +427,14 @@ pub async fn start(
         name: &str,
         addr_str: &str,
         netmask_str: &str,
-    ) -> Result<tokio::fs::File, String> {
-        let mut cfg = Configuration::default();
+    ) -> Result<
+        (
+            tokio::io::ReadHalf<tokio_tun::Tun>,
+            tokio::io::WriteHalf<tokio_tun::Tun>,
+        ),
+        String,
+    > {
+        // let mut cfg = Configuration::default(); // Configuration not used with tokio-tun
         // Parse address, supporting both IPv4 and IPv6.
         let ip_addr = addr_str
             .parse::<std::net::IpAddr>()
@@ -438,11 +445,11 @@ pub async fn start(
                 let netmask = netmask_str
                     .parse::<Ipv4Addr>()
                     .unwrap_or(Ipv4Addr::new(255, 255, 255, 0));
-                cfg.name(name).address(v4).netmask(netmask).up();
+                // Configuration via cfg is obsolete; IPv4 address will be set via builder later.
             }
             std::net::IpAddr::V6(v6) => {
                 // IPv6: apply prefix length (netmask_str) if provided, default /64.
-                cfg.name(name).address(std::net::IpAddr::V6(v6)).up();
+                // Configuration via cfg is obsolete; IPv6 address will be set via builder later.
                 // After interface is up, configure IPv6 address with prefix using system command (Linux).
                 // If netmask_str is empty, default to 64.
                 let prefix = if netmask_str.is_empty() {
@@ -470,26 +477,59 @@ pub async fn start(
                 }
             }
         }
-        use std::os::fd::{FromRawFd, IntoRawFd};
-        let dev = TunDevice::new(&cfg)
-            .map_err(|e| format!("Failed to create TUN device {}: {}", name, e))?;
-        let raw_fd = dev.into_raw_fd();
-        let std_file = unsafe { std::fs::File::from_raw_fd(raw_fd) };
-        Ok(tokio::fs::File::from_std(std_file))
+        // Build TUN device asynchronously using tokio-tun.
+        let mut builder = tokio_tun::TunBuilder::default().name(name).up();
+        match ip_addr {
+            std::net::IpAddr::V4(v4) => {
+                let netmask = netmask_str
+                    .parse::<Ipv4Addr>()
+                    .unwrap_or(Ipv4Addr::new(255, 255, 255, 0));
+                builder = builder.address(v4).netmask(netmask);
+            }
+            std::net::IpAddr::V6(v6) => {
+                // IPv6 address is configured via system command; no builder address call
+                // Optional IPv6 prefix handling via ip command if needed.
+                let prefix = if netmask_str.is_empty() {
+                    64u8
+                } else {
+                    netmask_str.parse::<u8>().map_err(|_| {
+                        format!("Invalid IPv6 prefix '{}', expected 0-128", netmask_str)
+                    })?
+                };
+                #[cfg(target_os = "linux")]
+                {
+                    use std::process::Command;
+                    let addr_with_prefix = format!("{}/{}", addr_str, prefix);
+                    let status = Command::new("ip")
+                        .args(["-6", "addr", "add", &addr_with_prefix, "dev", name])
+                        .status()
+                        .map_err(|e| format!("Failed to execute ip command for {}: {}", name, e))?;
+                    if !status.success() {
+                        return Err(format!(
+                            "ip command failed for {} with exit code {:?}",
+                            name,
+                            status.code()
+                        ));
+                    }
+                }
+            }
+        }
+        let tun = builder.try_build().map_err(|e| e.to_string())?;
+        // Split into read/write halves.
+        let (reader, writer) = tokio::io::split(tun);
+        Ok((reader, writer))
     }
 
-    let async_dev_a = create_async_tun(
+    let (mut async_dev_a_reader, mut async_dev_a_writer) = create_async_tun(
         &cfg.interfaces.real_tun_a.name,
         &cfg.interfaces.real_tun_a.address,
         &cfg.interfaces.real_tun_a.netmask,
     )?;
-    let async_dev_b = create_async_tun(
+    let (mut async_dev_b_reader, mut async_dev_b_writer) = create_async_tun(
         &cfg.interfaces.real_tun_b.name,
         &cfg.interfaces.real_tun_b.address,
         &cfg.interfaces.real_tun_b.netmask,
     )?;
-    let mut async_dev_a = async_dev_a;
-    let mut async_dev_b = async_dev_b;
     let mut buf_a = vec![0u8; cfg.simulation.mtu as usize];
     let mut buf_b = vec![0u8; cfg.simulation.mtu as usize];
     // Graceful shutdown signal future.
@@ -514,7 +554,7 @@ pub async fn start(
             }, */
 
             // Read from TUN A, forward to B.
-            read_res = async_dev_a.read(&mut buf_a) => {
+            read_res = async_dev_a_reader.read(&mut buf_a) => {
                 println!("READ from A: {:?}", &read_res);
                 let n = match read_res {
                     Ok(0) => { debug!("Read zero bytes from TUN device, continuing"); continue; }, // EOF (non-fatal)
@@ -539,7 +579,7 @@ pub async fn start(
                 } else {
                     process_packet(fabric, &routing_tables, ingress.clone(), packet, destination).await
                 };
-                if let Err(e) = async_dev_b.write_all(&processed.raw).await {
+                if let Err(e) = async_dev_b_writer.write_all(&processed.raw).await {
                     let err_msg = e.to_string();
                     if err_msg.contains("seek on unseekable file") {
                         warn!("Write to TUN B failed (unseekable), likely due to mock mode; ignoring.");
@@ -550,7 +590,7 @@ pub async fn start(
                 }
             }
             // Read from TUN B, forward to A.
-            read_res = async_dev_b.read(&mut buf_b) => {
+            read_res = async_dev_b_reader.read(&mut buf_b) => {
                 println!("READ from B: {:?}", &read_res);
                 let n = match read_res {
                     Ok(0) => { debug!("Read zero bytes from TUN device, continuing"); continue; }, // EOF (non-fatal)
@@ -575,7 +615,7 @@ pub async fn start(
                 } else {
                     process_packet(fabric, &routing_tables, ingress.clone(), packet, destination).await
                 };
-                if let Err(e) = async_dev_a.write_all(&processed.raw).await {
+                if let Err(e) = async_dev_a_writer.write_all(&processed.raw).await {
                     let err_msg = e.to_string();
                     if err_msg.contains("seek on unseekable file") {
                         warn!("Write to TUN A failed (unseekable), likely due to mock mode; ignoring.");
