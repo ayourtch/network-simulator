@@ -14,7 +14,7 @@ use crate::topology::Fabric;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 
-// use futures::future::pending; // pending not used currently
+use futures::future::pending; // pending not used currently
 use ipnet::IpNet;
 use std::net::Ipv4Addr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -183,7 +183,7 @@ pub async fn start(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // ip_in_prefix helper defined at module level above
     // Optional interval for periodic virtual‑customer packet generation
-    let mut vc_interval: Option<tokio::time::Interval> = None;
+    let mut _vc_interval: Option<tokio::time::Interval> = None;
     // If real TUN devices are not configured (empty address) and no mock or virtual customer handling, skip TUN handling.
     if cfg.interfaces.real_tun_a.address.is_empty()
         && cfg.interfaces.real_tun_b.address.is_empty()
@@ -225,7 +225,7 @@ pub async fn start(
         // Setup periodic interval if rate > 0
         if let Some(rate) = vc.rate {
             if rate > 0 {
-                vc_interval = Some(tokio::time::interval(std::time::Duration::from_secs_f64(
+                _vc_interval = Some(tokio::time::interval(std::time::Duration::from_secs_f64(
                     1.0 / rate as f64,
                 )));
             }
@@ -440,14 +440,14 @@ pub async fn start(
             .parse::<std::net::IpAddr>()
             .map_err(|_| format!("Invalid IP address for TUN {}: '{}'", name, addr_str))?;
         match ip_addr {
-            std::net::IpAddr::V4(v4) => {
+            std::net::IpAddr::V4(_v4) => {
                 // IPv4: use provided netmask (fallback defaults).
-                let netmask = netmask_str
+                let _netmask = netmask_str
                     .parse::<Ipv4Addr>()
                     .unwrap_or(Ipv4Addr::new(255, 255, 255, 0));
                 // Configuration via cfg is obsolete; IPv4 address will be set via builder later.
             }
-            std::net::IpAddr::V6(v6) => {
+            std::net::IpAddr::V6(_v6) => {
                 // IPv6: apply prefix length (netmask_str) if provided, default /64.
                 // Configuration via cfg is obsolete; IPv6 address will be set via builder later.
                 // After interface is up, configure IPv6 address with prefix using system command (Linux).
@@ -480,13 +480,13 @@ pub async fn start(
         // Build TUN device asynchronously using tokio-tun.
         let mut builder = tokio_tun::TunBuilder::default().name(name).up();
         match ip_addr {
-            std::net::IpAddr::V4(v4) => {
-                let netmask = netmask_str
+            std::net::IpAddr::V4(_v4) => {
+                let _netmask = netmask_str
                     .parse::<Ipv4Addr>()
                     .unwrap_or(Ipv4Addr::new(255, 255, 255, 0));
-                builder = builder.address(v4).netmask(netmask);
+                builder = builder.address(_v4).netmask(_netmask);
             }
-            std::net::IpAddr::V6(v6) => {
+            std::net::IpAddr::V6(_v6) => {
                 // IPv6 address is configured via system command; no builder address call
                 // Optional IPv6 prefix handling via ip command if needed.
                 let prefix = if netmask_str.is_empty() {
@@ -540,8 +540,7 @@ pub async fn start(
         println!("Loop");
         select! {
             // Periodic virtual‑customer generation tick
-            /*
-            _ = async {
+                        _ = async {
                 if let Some(ref mut int) = _vc_interval {
                     int.tick().await;
                 } else {
@@ -551,7 +550,7 @@ pub async fn start(
                 if let Some(vc) = &cfg.virtual_customer {
                     generate_virtual_packet(vc, cfg, fabric, &routing_tables, &multipath_tables, &ingress_a, &ingress_b).await;
                 }
-            }, */
+            },
 
             // Read from TUN A, forward to B.
             read_res = async_dev_a_reader.read(&mut buf_a) => {

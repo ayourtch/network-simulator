@@ -1,3 +1,3 @@
 # Virtual Customer Interval Fact
 
-The simulator defines a `vc_interval` variable intended for periodic virtual‑customer packet generation, but it is currently unused. Future work could hook this interval into the main event loop to emit packets at the configured rate without an initial burst.
+The simulator defines a `vc_interval` variable for periodic virtual‑customer packet generation. It is now hooked into the main event loop in `src/tun/mod.rs`, ticking at the configured rate and invoking `generate_virtual_packet`. This eliminates previous unused‑variable warnings and enables steady traffic generation without an initial burst.
