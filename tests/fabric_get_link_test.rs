@@ -7,16 +7,8 @@ fn test_fabric_get_link() {
     let mut fabric = Fabric::new();
     let a_id = RouterId("Rx0y0".to_string());
     let b_id = RouterId("Rx1y1".to_string());
-    let router_a = Router {
-        id: a_id.clone(),
-        routing: Default::default(),
-        stats: Default::default(),
-    };
-    let router_b = Router {
-        id: b_id.clone(),
-        routing: Default::default(),
-        stats: Default::default(),
-    };
+    let router_a = Router::new(a_id.clone());
+    let router_b = Router::new(b_id.clone());
     fabric.add_router(router_a);
     fabric.add_router(router_b);
     let cfg = LinkConfig {

@@ -27,11 +27,7 @@ fn test_icmp_destination_unreachable_generated() {
 
     // Build minimal fabric with one router having a valid ID.
     let mut fabric = Fabric::new();
-    let router = Router {
-        id: RouterId("Rx0y0".to_string()),
-        routing: Default::default(),
-        stats: Default::default(),
-    };
+    let router = Router::new(RouterId("Rx0y0".to_string()));
     fabric.add_router(router);
 
     // Empty routing table (no entry for destination).

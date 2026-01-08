@@ -24,13 +24,15 @@ fn test_generate_fragmentation_needed() {
         raw,
     };
     let mtu = 1500u32;
-    let icmp_pkt = icmp::generate_fragmentation_needed(&packet, mtu);
+    // Router address for the ICMP error
+    let router_addr = Ipv4Addr::new(10, 100, 0, 1);
+    let icmp_pkt = icmp::generate_fragmentation_needed(&packet, mtu, router_addr);
     // Verify IPv4 header length (should be >= 28 bytes)
     assert!(icmp_pkt.len() >= 28);
     // Type should be 3, code 4
     assert_eq!(icmp_pkt[20], 3);
     assert_eq!(icmp_pkt[21], 4);
-    // MTU field is at offset 24 (after type,code,checksum,unused)
-    let mtu_bytes = &icmp_pkt[24..26];
+    // MTU field is at offset 26 (after type,code,checksum,unused)
+    let mtu_bytes = &icmp_pkt[26..28];
     assert_eq!(u16::from_be_bytes([mtu_bytes[0], mtu_bytes[1]]), mtu as u16);
 }

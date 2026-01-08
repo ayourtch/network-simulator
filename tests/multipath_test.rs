@@ -7,21 +7,9 @@ fn test_multipath_routing_two_equal_paths() {
     // Build a simple fabric: routers R0, R1, R2; ingress at R0; destination at R2.
     let mut fabric = Fabric::new();
     // Add routers with valid IDs (RxXyY pattern)
-    let r0 = Router {
-        id: RouterId("Rx0y0".to_string()),
-        routing: Default::default(),
-        stats: Default::default(),
-    };
-    let r1 = Router {
-        id: RouterId("Rx0y1".to_string()),
-        routing: Default::default(),
-        stats: Default::default(),
-    };
-    let r2 = Router {
-        id: RouterId("Rx0y2".to_string()),
-        routing: Default::default(),
-        stats: Default::default(),
-    };
+    let r0 = Router::new(RouterId("Rx0y0".to_string()));
+    let r1 = Router::new(RouterId("Rx0y1".to_string()));
+    let r2 = Router::new(RouterId("Rx0y2".to_string()));
     fabric.add_router(r0);
     fabric.add_router(r1);
     fabric.add_router(r2);

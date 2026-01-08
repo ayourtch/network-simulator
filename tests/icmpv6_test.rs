@@ -1,5 +1,6 @@
 use network_simulator::icmp::generate_icmpv6_error;
 use network_simulator::packet::parse;
+use std::net::Ipv6Addr;
 
 #[test]
 fn test_generate_icmpv6_time_exceeded() {
@@ -15,8 +16,10 @@ fn test_generate_icmpv6_time_exceeded() {
         0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2,
     ];
     let packet = parse(&raw).expect("parse IPv6 packet");
-    let icmp = generate_icmpv6_error(&packet, 3, 0); // Time Exceeded
-                                                     // Verify IPv6 version
+    // Router address for the ICMP error
+    let router_addr: Ipv6Addr = "fd00::1:0".parse().unwrap();
+    let icmp = generate_icmpv6_error(&packet, 3, 0, router_addr, None); // Time Exceeded
+                                                                        // Verify IPv6 version
     assert_eq!(icmp[0] >> 4, 6);
     // Next Header should be ICMPv6 (58)
     assert_eq!(icmp[6], 58);

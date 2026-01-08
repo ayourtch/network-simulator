@@ -6,16 +6,8 @@ fn test_fabric_incident_links_with_links() {
     let mut fabric = Fabric::new();
     let router_a_id = RouterId("Rx0y0".to_string());
     let router_b_id = RouterId("Rx5y5".to_string());
-    let router_a = Router {
-        id: router_a_id.clone(),
-        routing: Default::default(),
-        stats: Default::default(),
-    };
-    let router_b = Router {
-        id: router_b_id.clone(),
-        routing: Default::default(),
-        stats: Default::default(),
-    };
+    let router_a = Router::new(router_a_id.clone());
+    let router_b = Router::new(router_b_id.clone());
     fabric.add_router(router_a);
     fabric.add_router(router_b);
     // Add a link between the routers

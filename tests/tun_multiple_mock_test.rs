@@ -74,16 +74,8 @@ fn test_multiple_mock_packet_files_injection() {
 
     // Build fabric.
     let mut fabric = Fabric::new();
-    let router_a = Router {
-        id: RouterId("Rx0y0".to_string()),
-        routing: Default::default(),
-        stats: Default::default(),
-    };
-    let router_b = Router {
-        id: RouterId("Rx0y1".to_string()),
-        routing: Default::default(),
-        stats: Default::default(),
-    };
+    let router_a = Router::new(RouterId("Rx0y0".to_string()));
+    let router_b = Router::new(RouterId("Rx0y1".to_string()));
     fabric.add_router(router_a);
     fabric.add_router(router_b);
     fabric.add_link(

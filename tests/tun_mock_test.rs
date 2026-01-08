@@ -69,16 +69,8 @@ fn test_tun_mock_packet_processing() {
     // Build fabric as in lib::run.
     let mut fabric = Fabric::new();
     // Add routers.
-    let router_a = Router {
-        id: RouterId("Rx0y0".to_string()),
-        routing: Default::default(),
-        stats: Default::default(),
-    };
-    let router_b = Router {
-        id: RouterId("Rx0y1".to_string()),
-        routing: Default::default(),
-        stats: Default::default(),
-    };
+    let router_a = Router::new(RouterId("Rx0y0".to_string()));
+    let router_b = Router::new(RouterId("Rx0y1".to_string()));
     fabric.add_router(router_a);
     fabric.add_router(router_b);
     // Add link.

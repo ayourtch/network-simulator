@@ -19,16 +19,8 @@ async fn test_link_simulation_and_load_balancing() {
             total_cost: 0,
         },
     };
-    let r1 = Router {
-        id: RouterId("Rx0y0".to_string()),
-        routing: dummy_route.clone(),
-        stats: Default::default(),
-    };
-    let r2 = Router {
-        id: RouterId("Rx0y1".to_string()),
-        routing: dummy_route,
-        stats: Default::default(),
-    };
+    let r1 = Router::new(RouterId("Rx0y0".to_string()));
+    let r2 = Router::new(RouterId("Rx0y1".to_string()));
     fabric.add_router(r1.clone());
     fabric.add_router(r2.clone());
     let link_cfg = LinkConfig {

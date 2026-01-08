@@ -29,16 +29,8 @@ async fn test_destination_detection_stops_forwarding() {
         .insert("Rx0y0_Rx0y1".to_string(), link_cfg);
     // Build fabric
     let mut fabric = Fabric::new();
-    let r0 = network_simulator::topology::router::Router {
-        id: RouterId("Rx0y0".to_string()),
-        routing: Default::default(),
-        stats: Default::default(),
-    };
-    let r1 = network_simulator::topology::router::Router {
-        id: RouterId("Rx0y1".to_string()),
-        routing: Default::default(),
-        stats: Default::default(),
-    };
+    let r0 = network_simulator::topology::router::Router::new(RouterId("Rx0y0".to_string()));
+    let r1 = network_simulator::topology::router::Router::new(RouterId("Rx0y1".to_string()));
     fabric.add_router(r0.clone());
     fabric.add_router(r1.clone());
     fabric.add_link(&r0.id, &r1.id, cfg.topology.links["Rx0y0_Rx0y1"].clone());

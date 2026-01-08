@@ -5,11 +5,7 @@ fn test_fabric_get_router_mut() {
     // Setup fabric with a router
     let mut fabric = Fabric::new();
     let router_id = RouterId("Rx0y0".to_string());
-    let router = Router {
-        id: router_id.clone(),
-        routing: Default::default(),
-        stats: Default::default(),
-    };
+    let router = Router::new(router_id.clone());
     fabric.add_router(router);
     // Retrieve mutable reference and modify stats
     {
