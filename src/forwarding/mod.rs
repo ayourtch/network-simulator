@@ -39,11 +39,11 @@ pub fn select_egress_link<'a>(
     }
 
     // Load balancing among links with load_balance enabled.
+    // Issue 104 fix: Use only the 5-tuple hash for consistent flow affinity (no counter).
     let lb_links: Vec<&&Link> = candidates.iter().filter(|&&l| l.cfg.load_balance).collect();
     if !lb_links.is_empty() {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        use std::sync::atomic::Ordering;
         let mut hasher = DefaultHasher::new();
         // Hash the 5‑tuple
         packet.src_ip.hash(&mut hasher);
@@ -51,17 +51,11 @@ pub fn select_egress_link<'a>(
         packet.src_port.hash(&mut hasher);
         packet.dst_port.hash(&mut hasher);
         packet.protocol.hash(&mut hasher);
-        // Include the sum of counters of all load‑balanced links to vary per packet
-        let total_counter: u64 = lb_links
-            .iter()
-            .map(|l| l.counter.load(Ordering::Relaxed))
-            .sum();
-        total_counter.hash(&mut hasher);
         let hash = hasher.finish();
         let idx = (hash as usize) % lb_links.len();
         let chosen = *lb_links[idx];
         debug!(
-            "Load‑balanced selection of link {:?} for router {} (with counter)",
+            "Load‑balanced selection of link {:?} for router {} (5-tuple hash)",
             chosen.id, router_id.0
         );
         return Some(chosen);

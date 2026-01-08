@@ -16,12 +16,11 @@ use std::io::{BufRead, BufReader, Write};
 
 use futures::future::pending; // used for idle handling when no virtual‑customer interval is configured
 use ipnet::IpNet;
-use std::net::Ipv4Addr;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::process::Command;
 use tokio::select;
 use tokio::signal;
-// use tokio_tun::TunBuilder; // currently unused, kept for future reference
+use tun_rs::AsyncDevice;
+
+use tracing::{debug, error, info, warn};
 
 fn ip_in_prefix(ip: &std::net::IpAddr, prefix: &str) -> bool {
     if prefix.is_empty() {
@@ -32,11 +31,6 @@ fn ip_in_prefix(ip: &std::net::IpAddr, prefix: &str) -> bool {
         Err(_) => false,
     }
 }
-
-// // use tun::platform::Device as TunDevice; // Deprecated, using tokio-tun instead // Deprecated, using tokio-tun instead
-// use tun::Configuration; // Deprecated, not needed with tokio-tun
-
-use tracing::{debug, error, info, warn};
 
 /// Mock TUN handling.
 /// If `packet_file` is specified in the config, each line of the file should contain a hex-encoded
@@ -423,91 +417,61 @@ pub async fn start(
     // Open two real TUN devices (real_tun_a and real_tun_b).
     // Packets read from tun_a are considered ingress_a and sent out via tun_b, and vice versa.
 
-    // Helper to create async TUN device from config.
-    async fn create_async_tun(
+    // Helper to create async TUN device from config using tun-rs.
+    fn create_async_tun(
         name: &str,
         addr_str: &str,
         netmask_str: &str,
-    ) -> Result<
-        (
-            tokio::io::ReadHalf<tokio_tun::Tun>,
-            tokio::io::WriteHalf<tokio_tun::Tun>,
-        ),
-        String,
-    > {
-        // let mut cfg = Configuration::default(); // Configuration not used with tokio-tun
+    ) -> Result<AsyncDevice, String> {
+        use tun_rs::DeviceBuilder;
+
         // Parse address, supporting both IPv4 and IPv6.
         let ip_addr = addr_str
             .parse::<std::net::IpAddr>()
             .map_err(|_| format!("Invalid IP address for TUN {}: '{}'", name, addr_str))?;
-        // Parse the IP address; for IPv6 we also need the address for the builder.
-        match ip_addr {
-            std::net::IpAddr::V4(_v4) => {
-                // IPv4: nothing extra needed here; netmask will be applied when building.
-            }
-            std::net::IpAddr::V6(_v6) => {
-                // IPv6: netmask_str is interpreted as prefix length; default to 64 if empty.
-                let _prefix = if netmask_str.is_empty() {
-                    64u8
-                } else {
-                    netmask_str.parse::<u8>().map_err(|_| {
-                        format!("Invalid IPv6 prefix '{}', expected 0-128", netmask_str)
-                    })?
-                };
-                // No further action needed; IPv6 address will be configured via system command after interface is up.
-            }
-        }
-        // Build TUN device asynchronously using tokio-tun.
-        let mut builder = tokio_tun::TunBuilder::default().name(name).up();
+
+        let mut builder = DeviceBuilder::new().name(name);
+
         match ip_addr {
             std::net::IpAddr::V4(v4) => {
-                let netmask = netmask_str
-                    .parse::<Ipv4Addr>()
-                    .unwrap_or(Ipv4Addr::new(255, 255, 255, 0));
-                builder = builder.address(v4).netmask(netmask);
+                // Parse netmask as prefix length or dotted notation
+                let prefix: u8 = if netmask_str.is_empty() {
+                    24
+                } else if let Ok(p) = netmask_str.parse::<u8>() {
+                    p
+                } else if let Ok(mask) = netmask_str.parse::<std::net::Ipv4Addr>() {
+                    // Convert netmask to prefix length
+                    mask.octets().iter().map(|b| b.count_ones() as u8).sum()
+                } else {
+                    24
+                };
+                builder = builder.ipv4(v4, prefix, None);
             }
-            std::net::IpAddr::V6(_v6) => {
-                // IPv6 address configuration not directly supported by tokio-tun builder.
-                // It will be set via a system command after the interface is up.
-                // No builder address call is made here.
-            }
-        }
-        let tun = builder.try_build().map_err(|e| e.to_string())?;
-        // For IPv6, configure address and prefix using system command if needed.
-        if let std::net::IpAddr::V6(v6_addr) = ip_addr {
-            // Determine prefix length (netmask_str) – default to 64 if empty or invalid.
-            let prefix: u8 = if netmask_str.is_empty() {
-                64
-            } else {
-                netmask_str.parse::<u8>().unwrap_or(64)
-            };
-            // Construct address/prefix string, e.g., "2001:db8::1/64".
-            let addr_with_prefix = format!("{}/{}", v6_addr, prefix);
-            // Use the `ip` command to assign the address to the TUN interface.
-            // Use async command to avoid blocking the runtime.
-            let status = Command::new("ip")
-                .args(["-6", "addr", "add", &addr_with_prefix, "dev", name])
-                .status()
-                .await;
-            if let Err(e) = status {
-                warn!("Failed to set IPv6 address on TUN {}: {}", name, e);
+            std::net::IpAddr::V6(v6) => {
+                let prefix: u8 = if netmask_str.is_empty() {
+                    64
+                } else {
+                    netmask_str.parse::<u8>().unwrap_or(64)
+                };
+                builder = builder.ipv6(v6, prefix);
             }
         }
-        // Split into read/write halves.
-        let (reader, writer) = tokio::io::split(tun);
-        Ok((reader, writer))
+
+        // Build the async TUN device
+        builder.mtu(1500).build_async().map_err(|e| e.to_string())
     }
 
-    let (mut async_dev_a_reader, mut async_dev_a_writer) = match create_async_tun(
+    let async_dev_a = match create_async_tun(
         &cfg.interfaces.real_tun_a.name,
         &cfg.interfaces.real_tun_a.address,
         &cfg.interfaces.real_tun_a.netmask,
-    )
-    .await
-    {
+    ) {
         Ok(dev) => dev,
         Err(e) => {
-            if e.contains("Operation not permitted") || e.contains("EPERM") {
+            if e.contains("Operation not permitted")
+                || e.contains("EPERM")
+                || e.contains("permission")
+            {
                 warn!("Skipping real TUN A due to insufficient permissions: {}", e);
                 return Ok(());
             } else {
@@ -515,16 +479,17 @@ pub async fn start(
             }
         }
     };
-    let (mut async_dev_b_reader, mut async_dev_b_writer) = match create_async_tun(
+    let async_dev_b = match create_async_tun(
         &cfg.interfaces.real_tun_b.name,
         &cfg.interfaces.real_tun_b.address,
         &cfg.interfaces.real_tun_b.netmask,
-    )
-    .await
-    {
+    ) {
         Ok(dev) => dev,
         Err(e) => {
-            if e.contains("Operation not permitted") || e.contains("EPERM") {
+            if e.contains("Operation not permitted")
+                || e.contains("EPERM")
+                || e.contains("permission")
+            {
                 warn!("Skipping real TUN B due to insufficient permissions: {}", e);
                 return Ok(());
             } else {
@@ -532,8 +497,9 @@ pub async fn start(
             }
         }
     };
-    let mut buf_a = vec![0u8; cfg.simulation.mtu as usize];
-    let mut buf_b = vec![0u8; cfg.simulation.mtu as usize];
+
+    let mut buf_a = vec![0u8; cfg.simulation.mtu as usize + 100];
+    let mut buf_b = vec![0u8; cfg.simulation.mtu as usize + 100];
     // Graceful shutdown signal future.
     let shutdown_signal = signal::ctrl_c();
     // Pin the shutdown future for select! macro.
@@ -542,7 +508,7 @@ pub async fn start(
         debug!("Entering dual‑TUN processing loop");
         select! {
             // Periodic virtual‑customer generation tick
-                        _ = async {
+            _ = async {
                 if let Some(ref mut int) = _vc_interval {
                     int.tick().await;
                 } else {
@@ -555,28 +521,18 @@ pub async fn start(
             },
 
             // Read from TUN A, forward to B.
-            read_res = async_dev_a_reader.read(&mut buf_a) => {
+            read_res = async_dev_a.recv(&mut buf_a) => {
                 debug!("Read result from TUN A: {:?}", read_res);
                 let n = match read_res {
-                    Ok(0) => { debug!("Read zero bytes from TUN device, continuing"); continue; }, // EOF (non-fatal)
+                    Ok(0) => { debug!("Read zero bytes from TUN device, continuing"); continue; },
                     Ok(n) => n,
                     Err(e) => {
                         error!("Error reading from TUN A: {}", e);
                         break;
                     }
                 };
-                // TUN devices on Linux prepend a 4‑byte header (flags + protocol).
-                // Strip it if present before parsing.
-                let packet_slice = if n >= 4 {
-                    let proto = u16::from_be_bytes([buf_a[2], buf_a[3]]);
-                    if proto == 0x0800 || proto == 0x86DD {
-                        &buf_a[4..n]
-                    } else {
-                        &buf_a[..n]
-                    }
-                } else {
-                    &buf_a[..n]
-                };
+                // tun-rs provides consistent IP packets across platforms (no 4-byte header)
+                let packet_slice = &buf_a[..n];
                 let packet = match parse(packet_slice) {
                     Ok(p) => p,
                     Err(e) => {
@@ -591,20 +547,8 @@ pub async fn start(
                 } else {
                     process_packet(fabric, &routing_tables, ingress.clone(), packet, destination).await
                 };
-                // Prepend the TUN header (flags 0, protocol) when writing to real TUN devices.
-                let write_buf = {
-                    // Determine protocol based on destination IP version.
-                    let proto: u16 = match processed.dst_ip {
-                        std::net::IpAddr::V4(_) => 0x0800,
-                        std::net::IpAddr::V6(_) => 0x86DD,
-                    };
-                    let mut v = Vec::with_capacity(4 + processed.raw.len());
-                    v.extend_from_slice(&[0u8, 0u8]);
-                    v.extend_from_slice(&proto.to_be_bytes());
-                    v.extend_from_slice(&processed.raw);
-                    v
-                };
-                if let Err(e) = async_dev_b_writer.write_all(&write_buf).await {
+                // tun-rs handles the packet format consistently, so we just send the raw IP packet
+                if let Err(e) = async_dev_b.send(&processed.raw).await {
                     let err_msg = e.to_string();
                     if err_msg.contains("seek on unseekable file") {
                         warn!("Write to TUN B failed (unseekable), likely due to mock mode; ignoring.");
@@ -615,27 +559,18 @@ pub async fn start(
                 }
             }
             // Read from TUN B, forward to A.
-            read_res = async_dev_b_reader.read(&mut buf_b) => {
+            read_res = async_dev_b.recv(&mut buf_b) => {
                 debug!("Read result from TUN B: {:?}", read_res);
                 let n = match read_res {
-                    Ok(0) => { debug!("Read zero bytes from TUN device, continuing"); continue; }, // EOF (non-fatal)
+                    Ok(0) => { debug!("Read zero bytes from TUN device, continuing"); continue; },
                     Ok(n) => { debug!("Read {} bytes from B", n); n }
                     Err(e) => {
                         error!("Error reading from TUN B: {}", e);
                         break;
                     }
                 };
-                // Strip potential TUN 4‑byte header similar to TUN A.
-                let packet_slice = if n >= 4 {
-                    let proto = u16::from_be_bytes([buf_b[2], buf_b[3]]);
-                    if proto == 0x0800 || proto == 0x86DD {
-                        &buf_b[4..n]
-                    } else {
-                        &buf_b[..n]
-                    }
-                } else {
-                    &buf_b[..n]
-                };
+                // tun-rs provides consistent IP packets across platforms (no 4-byte header)
+                let packet_slice = &buf_b[..n];
                 let packet = match parse(packet_slice) {
                     Ok(p) => p,
                     Err(e) => {
@@ -650,19 +585,8 @@ pub async fn start(
                 } else {
                     process_packet(fabric, &routing_tables, ingress.clone(), packet, destination).await
                 };
-                // Prepend TUN header when writing to TUN A.
-                let write_buf = {
-                    let proto: u16 = match processed.dst_ip {
-                        std::net::IpAddr::V4(_) => 0x0800,
-                        std::net::IpAddr::V6(_) => 0x86DD,
-                    };
-                    let mut v = Vec::with_capacity(4 + processed.raw.len());
-                    v.extend_from_slice(&[0u8, 0u8]);
-                    v.extend_from_slice(&proto.to_be_bytes());
-                    v.extend_from_slice(&processed.raw);
-                    v
-                };
-                if let Err(e) = async_dev_a_writer.write_all(&write_buf).await {
+                // tun-rs handles the packet format consistently
+                if let Err(e) = async_dev_a.send(&processed.raw).await {
                     let err_msg = e.to_string();
                     if err_msg.contains("seek on unseekable file") {
                         warn!("Write to TUN A failed (unseekable), likely due to mock mode; ignoring.");
@@ -674,16 +598,7 @@ pub async fn start(
             }
             _ = &mut shutdown_signal => {
                 info!("Shutdown signal received, exiting dual‑TUN loop");
-                // Bring down the TUN interfaces to avoid leaving them up after exit.
-                #[cfg(target_os = "linux")] {
-                    use std::process::Command;
-                    let _ = Command::new("ip")
-                        .args(["link", "set", "dev", &cfg.interfaces.real_tun_a.name, "down"])
-                        .status();
-                    let _ = Command::new("ip")
-                        .args(["link", "set", "dev", &cfg.interfaces.real_tun_b.name, "down"])
-                        .status();
-                }
+                // TUN interfaces will be cleaned up when async_dev_a and async_dev_b are dropped
                 break;
             }
         }

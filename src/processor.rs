@@ -9,7 +9,19 @@ use crate::forwarding::select_egress_link;
 use crate::icmp;
 use crate::simulation::{simulate_link, SimulationError};
 use std::collections::HashMap;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use tracing::{debug, error};
+
+/// Get the IPv4 and IPv6 addresses for a router from the fabric.
+fn get_router_addresses(fabric: &Fabric, router_id: &RouterId) -> (Ipv4Addr, Ipv6Addr) {
+    if let Some(node_idx) = fabric.router_index.get(router_id) {
+        if let Some(router) = fabric.graph.node_weight(*node_idx) {
+            return (router.ipv4_addr, router.ipv6_addr);
+        }
+    }
+    // Fallback if router not found
+    (Ipv4Addr::UNSPECIFIED, Ipv6Addr::UNSPECIFIED)
+}
 
 // Helper to determine if a packet is IPv6.
 fn is_ipv6(packet: &PacketMeta) -> bool {
@@ -49,10 +61,11 @@ pub async fn process_packet(
         // Check for TTL expiration before decrementing.
         if packet.ttl <= 1 {
             // TTL will expire; generate ICMP Time Exceeded (IPv4 type 11, code 0) or ICMPv6 Time Exceeded (type 3, code 0).
+            let (ipv4_addr, ipv6_addr) = get_router_addresses(fabric, &ingress);
             let icmp_bytes = if is_ipv6(&packet) {
-                icmp::generate_icmpv6_error(&packet, 3, 0)
+                icmp::generate_icmpv6_error(&packet, 3, 0, ipv6_addr, None)
             } else {
-                icmp::generate_icmp_error(&packet, 11, 0)
+                icmp::generate_icmp_error(&packet, 11, 0, ipv4_addr)
             };
             // Increment ICMP counter for this router.
             if let Some(node_idx) = fabric.router_index.get(&ingress) {
@@ -77,10 +90,11 @@ pub async fn process_packet(
             None => {
                 debug!("No routing table for router {}", ingress.0);
                 // Generate ICMP Destination Unreachable (type 3 code 0)
+                let (ipv4_addr, ipv6_addr) = get_router_addresses(fabric, &ingress);
                 let icmp_bytes = if is_ipv6(&packet) {
-                    icmp::generate_icmpv6_error(&packet, 3, 0)
+                    icmp::generate_icmpv6_error(&packet, 1, 0, ipv6_addr, None)
                 } else {
-                    icmp::generate_icmp_error(&packet, 3, 0)
+                    icmp::generate_icmp_error(&packet, 3, 0, ipv4_addr)
                 };
                 if let Some(node_idx) = fabric.router_index.get(&ingress) {
                     if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
@@ -129,10 +143,11 @@ pub async fn process_packet(
         if let Err(e) = simulate_link(link, &packet.raw).await {
             match e {
                 SimulationError::MtuExceeded { mtu, .. } => {
+                    let (ipv4_addr, ipv6_addr) = get_router_addresses(fabric, &ingress);
                     let icmp_bytes = if is_ipv6(&packet) {
-                        icmp::generate_icmpv6_error(&packet, 2, 0)
+                        icmp::generate_icmpv6_error(&packet, 2, 0, ipv6_addr, Some(mtu))
                     } else {
-                        icmp::generate_fragmentation_needed(&packet, mtu)
+                        icmp::generate_fragmentation_needed(&packet, mtu, ipv4_addr)
                     };
                     if let Some(node_idx) = fabric.router_index.get(&ingress) {
                         if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
@@ -203,10 +218,11 @@ pub async fn process_packet_multi(
         }
         // TTL expiration handling (same as single‑path).
         if packet.ttl <= 1 {
+            let (ipv4_addr, ipv6_addr) = get_router_addresses(fabric, &ingress);
             let icmp_bytes = if is_ipv6(&packet) {
-                icmp::generate_icmpv6_error(&packet, 3, 0)
+                icmp::generate_icmpv6_error(&packet, 3, 0, ipv6_addr, None)
             } else {
-                icmp::generate_icmp_error(&packet, 11, 0)
+                icmp::generate_icmp_error(&packet, 11, 0, ipv4_addr)
             };
             if let Some(node_idx) = fabric.router_index.get(&ingress) {
                 if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
@@ -221,21 +237,17 @@ pub async fn process_packet_multi(
                 break;
             }
         }
-        // Decrement TTL.
-        if let Err(e) = packet.decrement_ttl() {
-            error!("Failed to decrement TTL: {}", e);
-            break;
-        }
         // Retrieve multipath table for current router.
         let mtable = match tables.get(&ingress) {
             Some(t) => t,
             None => {
                 debug!("No multipath table for router {}", ingress.0);
                 // Generate ICMP Destination Unreachable similar to single‑path handling.
+                let (ipv4_addr, ipv6_addr) = get_router_addresses(fabric, &ingress);
                 let icmp_bytes = if is_ipv6(&packet) {
-                    icmp::generate_icmpv6_error(&packet, 3, 0)
+                    icmp::generate_icmpv6_error(&packet, 1, 0, ipv6_addr, None)
                 } else {
-                    icmp::generate_icmp_error(&packet, 3, 0)
+                    icmp::generate_icmp_error(&packet, 3, 0, ipv4_addr)
                 };
                 if let Some(node_idx) = fabric.router_index.get(&ingress) {
                     if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {
@@ -260,6 +272,20 @@ pub async fn process_packet_multi(
             debug!("No multipath entries for router {}", ingress.0);
             break;
         }
+        // Check if we've reached the destination (Issue 102 fix: check BEFORE TTL decrement)
+        // If any entry points back to ourselves, we're at the destination.
+        if entries.iter().any(|e| e.next_hop == ingress) {
+            debug!(
+                "Packet reached destination router {} (multipath)",
+                ingress.0
+            );
+            break;
+        }
+        // Decrement TTL only after confirming we're not at destination.
+        if let Err(e) = packet.decrement_ttl() {
+            error!("Failed to decrement TTL: {}", e);
+            break;
+        }
         // Determine candidate links that connect to any of the equal‑cost next hops.
         let incident_links = fabric.incident_links(&ingress);
         let mut candidate_links: Vec<&Link> = incident_links
@@ -275,7 +301,8 @@ pub async fn process_packet_multi(
             // Fallback to any incident link.
             candidate_links = incident_links;
         }
-        // Load‑balance among candidate links with load_balance enabled, using counters.
+        // Load‑balance among candidate links with load_balance enabled.
+        // Issue 104 fix: Use only the 5-tuple hash for consistent flow affinity (no counter).
         let lb_links: Vec<&&Link> = candidate_links
             .iter()
             .filter(|&&l| l.cfg.load_balance)
@@ -283,19 +310,12 @@ pub async fn process_packet_multi(
         let chosen_link = if !lb_links.is_empty() {
             use std::collections::hash_map::DefaultHasher;
             use std::hash::{Hash, Hasher};
-            use std::sync::atomic::Ordering;
             let mut hasher = DefaultHasher::new();
             packet.src_ip.hash(&mut hasher);
             packet.dst_ip.hash(&mut hasher);
             packet.src_port.hash(&mut hasher);
             packet.dst_port.hash(&mut hasher);
             packet.protocol.hash(&mut hasher);
-            // Include sum of counters of load‑balanced links.
-            let total_counter: u64 = lb_links
-                .iter()
-                .map(|l| l.counter.load(Ordering::Relaxed))
-                .sum();
-            total_counter.hash(&mut hasher);
             let hash = hasher.finish();
             let idx = (hash as usize) % lb_links.len();
             *lb_links[idx]
@@ -313,10 +333,11 @@ pub async fn process_packet_multi(
         if let Err(e) = simulate_link(chosen_link, &packet.raw).await {
             match e {
                 SimulationError::MtuExceeded { mtu, .. } => {
+                    let (ipv4_addr, ipv6_addr) = get_router_addresses(fabric, &ingress);
                     let icmp_bytes = if is_ipv6(&packet) {
-                        icmp::generate_icmpv6_error(&packet, 2, 0)
+                        icmp::generate_icmpv6_error(&packet, 2, 0, ipv6_addr, Some(mtu))
                     } else {
-                        icmp::generate_fragmentation_needed(&packet, mtu)
+                        icmp::generate_fragmentation_needed(&packet, mtu, ipv4_addr)
                     };
                     if let Some(node_idx) = fabric.router_index.get(&ingress) {
                         if let Some(router) = fabric.graph.node_weight_mut(*node_idx) {

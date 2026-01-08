@@ -23,11 +23,7 @@ pub fn compute_routing_tables(cfg: &SimulatorConfig) -> HashMap<RouterId, routin
     let mut fabric = Fabric::new();
     // Populate fabric as in `run` (routers and links)
     for router_id in cfg.topology.routers.keys() {
-        let router = topology::router::Router {
-            id: RouterId(router_id.clone()),
-            routing: routing::RoutingTable::default(),
-            stats: topology::router::RouterStats::default(),
-        };
+        let router = topology::router::Router::new(RouterId(router_id.clone()));
         fabric.add_router(router);
     }
     for (link_name, link_cfg) in cfg.topology.links.iter() {
@@ -55,11 +51,7 @@ pub fn compute_multipath_tables(
     }
     let mut fabric = Fabric::new();
     for router_id in cfg.topology.routers.keys() {
-        let router = topology::router::Router {
-            id: RouterId(router_id.clone()),
-            routing: routing::RoutingTable::default(),
-            stats: topology::router::RouterStats::default(),
-        };
+        let router = topology::router::Router::new(RouterId(router_id.clone()));
         fabric.add_router(router);
     }
     for (link_name, link_cfg) in cfg.topology.links.iter() {
@@ -85,20 +77,7 @@ pub async fn run(cfg: SimulatorConfig) -> Result<Fabric, Box<dyn std::error::Err
     let mut fabric = Fabric::new();
     // Add routers from config
     for router_id in cfg.topology.routers.keys() {
-        let router = topology::router::Router {
-            id: RouterId(router_id.clone()),
-            routing: routing::RoutingTable {
-                tun_a: routing::RouteEntry {
-                    next_hop: RouterId("".to_string()),
-                    total_cost: 0,
-                },
-                tun_b: routing::RouteEntry {
-                    next_hop: RouterId("".to_string()),
-                    total_cost: 0,
-                },
-            },
-            stats: topology::router::RouterStats::default(),
-        };
+        let router = topology::router::Router::new(RouterId(router_id.clone()));
         fabric.add_router(router);
     }
     // Add links from config (very simplified – only adds if both ends exist)

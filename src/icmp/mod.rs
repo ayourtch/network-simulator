@@ -1,7 +1,7 @@
 // src/icmp/mod.rs
 
 use crate::packet::PacketMeta;
-use std::net::Ipv6Addr;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use tracing::debug;
 
 /// Compute ICMPv6 checksum with pseudo‑header.
@@ -34,9 +34,17 @@ fn icmpv6_checksum(src: Ipv6Addr, dst: Ipv6Addr, icmp: &[u8]) -> u16 {
 
 /// Generate a minimal ICMPv6 error packet.
 /// `error_type` and `code` follow the ICMPv6 specification.
+/// `router_addr` is the IPv6 address of the router generating the error.
+/// `mtu` is optional and only used for Packet Too Big (type 2).
 /// Returns a full IPv6 packet containing the ICMPv6 message and as much of the original
 /// packet as fits (up to the IPv6 minimum MTU of 1280 bytes).
-pub fn generate_icmpv6_error(packet: &PacketMeta, error_type: u8, code: u8) -> Vec<u8> {
+pub fn generate_icmpv6_error(
+    packet: &PacketMeta,
+    error_type: u8,
+    code: u8,
+    router_addr: Ipv6Addr,
+    mtu: Option<u32>,
+) -> Vec<u8> {
     debug!("Generating ICMPv6 error type {} code {}", error_type, code);
     let mut buf: Vec<u8> = Vec::new();
     // IPv6 header (40 bytes)
@@ -45,11 +53,8 @@ pub fn generate_icmpv6_error(packet: &PacketMeta, error_type: u8, code: u8) -> V
     buf.extend_from_slice(&[0, 0]); // placeholder for payload length
     buf.push(58); // Next Header = ICMPv6
     buf.push(64); // Hop Limit (arbitrary)
-                  // Source address = destination of the original packet (router)
-    let src = match packet.dst_ip {
-        std::net::IpAddr::V6(a) => a,
-        _ => Ipv6Addr::UNSPECIFIED,
-    };
+                  // Source address = router's own address
+    let src = router_addr;
     // Destination address = source of the original packet
     let dst = match packet.src_ip {
         std::net::IpAddr::V6(a) => a,
@@ -61,9 +66,25 @@ pub fn generate_icmpv6_error(packet: &PacketMeta, error_type: u8, code: u8) -> V
     buf.push(error_type);
     buf.push(code);
     buf.extend_from_slice(&[0, 0]); // checksum placeholder
-    if error_type == 3 {
-        // Time Exceeded includes 4‑byte unused field
-        buf.extend_from_slice(&[0, 0, 0, 0]);
+                                    // Add type-specific 4-byte field
+    match error_type {
+        1 => {
+            // Destination Unreachable: 4-byte unused field
+            buf.extend_from_slice(&[0, 0, 0, 0]);
+        }
+        2 => {
+            // Packet Too Big: 4-byte MTU field
+            let mtu_val = mtu.unwrap_or(1280);
+            buf.extend_from_slice(&mtu_val.to_be_bytes());
+        }
+        3 => {
+            // Time Exceeded: 4-byte unused field
+            buf.extend_from_slice(&[0, 0, 0, 0]);
+        }
+        _ => {
+            // Unknown type: add 4-byte unused field as fallback
+            buf.extend_from_slice(&[0, 0, 0, 0]);
+        }
     }
     // Append as much of the original packet as will fit within the IPv6 minimum MTU (1280)
     let max_payload = 1280 - buf.len();
@@ -100,8 +121,14 @@ fn calculate_icmp_checksum(data: &[u8]) -> u16 {
 
 /// Generate a generic ICMP error packet for IPv4.
 /// `error_type` and `code` follow the ICMP specification.
+/// `router_addr` is the IPv4 address of the router generating the error.
 /// For specific errors like Fragmentation Needed, use the dedicated function.
-pub fn generate_icmp_error(original: &PacketMeta, error_type: u8, code: u8) -> Vec<u8> {
+pub fn generate_icmp_error(
+    original: &PacketMeta,
+    error_type: u8,
+    code: u8,
+    router_addr: Ipv4Addr,
+) -> Vec<u8> {
     const IPV4_HEADER_LEN: usize = 20;
     const ORIGINAL_INCLUDE_LEN: usize = 28; // IP header + 8 bytes of payload
     let mut packet = Vec::with_capacity(IPV4_HEADER_LEN + 8 + ORIGINAL_INCLUDE_LEN);
@@ -114,12 +141,8 @@ pub fn generate_icmp_error(original: &PacketMeta, error_type: u8, code: u8) -> V
     packet.push(64); // TTL
     packet.push(1); // Protocol = ICMP
     packet.extend_from_slice(&[0, 0]); // Header checksum placeholder
-                                       // Source = original destination (router)
-    let src_ip = match original.dst_ip {
-        std::net::IpAddr::V4(a) => a.octets(),
-        _ => [0, 0, 0, 0],
-    };
-    packet.extend_from_slice(&src_ip);
+                                       // Source = router's own address
+    packet.extend_from_slice(&router_addr.octets());
     // Destination = original source
     let dst_ip = match original.src_ip {
         std::net::IpAddr::V4(a) => a.octets(),
@@ -130,7 +153,7 @@ pub fn generate_icmp_error(original: &PacketMeta, error_type: u8, code: u8) -> V
     packet.push(error_type);
     packet.push(code);
     packet.extend_from_slice(&[0, 0]); // Checksum placeholder
-                                       // Unused (2 bytes) + MTU field (2 bytes) – zero for generic errors
+                                       // Unused (4 bytes) for generic errors
     packet.extend_from_slice(&[0, 0, 0, 0]);
     // Include original IP header + first 8 bytes of payload
     let copy_len = std::cmp::min(ORIGINAL_INCLUDE_LEN, original.raw.len());
@@ -150,7 +173,12 @@ pub fn generate_icmp_error(original: &PacketMeta, error_type: u8, code: u8) -> V
 }
 
 /// Generate ICMP Destination Unreachable – Fragmentation Needed (type 3, code 4).
-pub fn generate_fragmentation_needed(original: &PacketMeta, mtu: u32) -> Vec<u8> {
+/// `router_addr` is the IPv4 address of the router generating the error.
+pub fn generate_fragmentation_needed(
+    original: &PacketMeta,
+    mtu: u32,
+    router_addr: Ipv4Addr,
+) -> Vec<u8> {
     const IPV4_HEADER_LEN: usize = 20;
     const ORIGINAL_INCLUDE_LEN: usize = 28;
     let mut packet = Vec::with_capacity(IPV4_HEADER_LEN + 8 + ORIGINAL_INCLUDE_LEN);
@@ -163,12 +191,8 @@ pub fn generate_fragmentation_needed(original: &PacketMeta, mtu: u32) -> Vec<u8>
     packet.push(64);
     packet.push(1); // Protocol = ICMP
     packet.extend_from_slice(&[0, 0]); // Header checksum placeholder
-                                       // Source = original destination (router)
-    let src_ip = match original.dst_ip {
-        std::net::IpAddr::V4(a) => a.octets(),
-        _ => [0, 0, 0, 0],
-    };
-    packet.extend_from_slice(&src_ip);
+                                       // Source = router's own address
+    packet.extend_from_slice(&router_addr.octets());
     // Destination = original source
     let dst_ip = match original.src_ip {
         std::net::IpAddr::V4(a) => a.octets(),
@@ -176,13 +200,14 @@ pub fn generate_fragmentation_needed(original: &PacketMeta, mtu: u32) -> Vec<u8>
     };
     packet.extend_from_slice(&dst_ip);
     // ICMP header for Fragmentation Needed
-    packet.push(3); // Type
-    packet.push(4); // Code
+    packet.push(3); // Type: Destination Unreachable
+    packet.push(4); // Code: Fragmentation needed and DF set
     packet.extend_from_slice(&[0, 0]); // Checksum placeholder
-                                       // Next‑Hop MTU field (2 bytes) as per RFC
+                                       // Per RFC 792: 2 bytes unused, then 2 bytes Next-Hop MTU
+    packet.extend_from_slice(&[0, 0]); // Unused (2 bytes)
     let mtu16 = (mtu as u16).to_be_bytes();
-    packet.extend_from_slice(&mtu16);
-    // Include original IP header + first 8 bytes of payload
+    packet.extend_from_slice(&mtu16); // Next-hop MTU (2 bytes)
+                                      // Include original IP header + first 8 bytes of payload
     let copy_len = std::cmp::min(ORIGINAL_INCLUDE_LEN, original.raw.len());
     packet.extend_from_slice(&original.raw[..copy_len]);
     // Set total length

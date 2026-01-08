@@ -21,9 +21,8 @@ pnet = "0.33"
 ipnet = "2.8"
 clap = { version = "4", features = ["derive"] }
 hex = "0.4"
-# TUN/TAP interface support
-tun = "0.6"
- tokio-tun = "0.6"
+# Cross-platform TUN/TAP interface support (works on Linux, macOS, Windows, *BSD)
+tun-rs = { version = "2", features = ["async"] }
 once_cell = "1.19"
 thiserror = "1.0"
 
