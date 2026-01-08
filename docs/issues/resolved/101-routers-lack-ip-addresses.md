@@ -81,7 +81,15 @@ pub fn generate_icmp_error(
 4. Update processor.rs to pass the router's address when generating ICMP.
 
 ## Resolution
-(To be filled when resolved)
+**Resolved: 2026-01-08**
+
+- Added `ipv4_addr` and `ipv6_addr` fields to `Router` struct
+- Implemented `Router::new(id)` constructor with auto-generated addresses
+- Addresses are deterministic based on grid position:
+  - IPv4: `10.{100+x}.{y}.1` (e.g., Rx2y3 -> 10.102.3.1)
+  - IPv6: `fd00::{x}:{y}` (e.g., Rx2y3 -> fd00::2:3)
+- Updated ICMP functions to accept router address parameter
+- Updated processor.rs to pass router addresses to all ICMP generation calls
 
 ---
 *Created: 2026-01-08*

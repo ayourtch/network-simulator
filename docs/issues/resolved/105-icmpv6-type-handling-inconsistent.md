@@ -101,7 +101,15 @@ match error_type {
 3. Update callers in `processor.rs` to pass MTU when generating Packet Too Big.
 
 ## Resolution
-(To be filled when resolved)
+**Resolved: 2026-01-08**
+
+- Added `mtu: Option<u32>` parameter to `generate_icmpv6_error` function
+- Implemented proper match statement for all ICMPv6 error types:
+  - Type 1 (Destination Unreachable): 4-byte unused field
+  - Type 2 (Packet Too Big): 4-byte MTU field
+  - Type 3 (Time Exceeded): 4-byte unused field
+  - Default: 4-byte unused field as fallback
+- Updated all callers to pass MTU when generating Packet Too Big errors
 
 ---
 *Created: 2026-01-08*

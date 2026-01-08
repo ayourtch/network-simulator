@@ -82,7 +82,11 @@ if let Err(e) = packet.decrement_ttl() {
 ```
 
 ## Resolution
-(To be filled when resolved)
+**Resolved: 2026-01-08**
+
+- Reordered `process_packet_multi` to check destination BEFORE decrementing TTL
+- Added destination check: `if entries.iter().any(|e| e.next_hop == ingress)` before TTL decrement
+- Now consistent with single-path processing behavior
 
 ---
 *Created: 2026-01-08*

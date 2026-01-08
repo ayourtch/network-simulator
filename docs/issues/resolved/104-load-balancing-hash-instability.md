@@ -67,7 +67,11 @@ if link.cfg.per_packet_load_balance {
 ```
 
 ## Resolution
-(To be filled when resolved)
+**Resolved: 2026-01-08**
+
+- Removed counter from hash calculation in both `processor.rs` and `forwarding/mod.rs`
+- Load balancing now uses only the 5-tuple (src_ip, dst_ip, src_port, dst_port, protocol)
+- Same flow always takes the same path, providing proper ECMP-like behavior
 
 ---
 *Created: 2026-01-08*

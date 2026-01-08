@@ -69,7 +69,11 @@ let mtu_in_packet = u16::from_be_bytes([
 ```
 
 ## Resolution
-(To be filled when resolved)
+**Resolved: 2026-01-08**
+
+- Added missing 2-byte unused field before MTU in `generate_fragmentation_needed`
+- Packet structure now correctly follows RFC 792:
+  - Type (1 byte) + Code (1 byte) + Checksum (2 bytes) + Unused (2 bytes) + MTU (2 bytes)
 
 ---
 *Created: 2026-01-08*
